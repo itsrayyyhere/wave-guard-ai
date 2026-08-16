@@ -25,7 +25,7 @@ const sessions: Session[] = [
   {
     id: "s1",
     name: "Morning Freestyle Set",
-    date: "Today · 06:412",
+    date: "Today · 06:41",
     duration: "01:24",
     risk: "high",
   },
