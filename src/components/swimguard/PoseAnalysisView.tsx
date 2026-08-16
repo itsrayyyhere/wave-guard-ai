@@ -1,0 +1,244 @@
+import { useEffect, useRef, useState } from "react";
+import { Play, Pause, SkipBack, SkipForward, Gauge, Activity, RotateCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Slider } from "@/components/ui/slider";
+import { cn } from "@/lib/utils";
+import swimmer from "@/assets/swimmer.jpg";
+
+// Normalized MediaPipe-style landmark set (subset of the 33 points, upper body focus)
+const BASE: Record<string, [number, number]> = {
+  nose: [0.37, 0.44],
+  leftEye: [0.35, 0.42],
+  rightEye: [0.39, 0.42],
+  leftEar: [0.42, 0.43],
+  mouth: [0.36, 0.47],
+  leftShoulder: [0.48, 0.52],
+  rightShoulder: [0.46, 0.44],
+  leftElbow: [0.34, 0.28],
+  rightElbow: [0.6, 0.62],
+  leftWrist: [0.19, 0.12],
+  rightWrist: [0.7, 0.7],
+  leftHand: [0.13, 0.08],
+  rightHand: [0.76, 0.74],
+  leftHip: [0.71, 0.63],
+  rightHip: [0.69, 0.56],
+  leftKnee: [0.86, 0.72],
+  rightKnee: [0.85, 0.63],
+  leftAnkle: [0.96, 0.79],
+  rightAnkle: [0.95, 0.68],
+};
+
+const EDGES: [string, string][] = [
+  ["leftEye", "rightEye"],
+  ["nose", "leftEye"],
+  ["nose", "rightEye"],
+  ["leftEye", "leftEar"],
+  ["nose", "mouth"],
+  ["leftShoulder", "rightShoulder"],
+  ["leftShoulder", "leftElbow"],
+  ["leftElbow", "leftWrist"],
+  ["leftWrist", "leftHand"],
+  ["rightShoulder", "rightElbow"],
+  ["rightElbow", "rightWrist"],
+  ["rightWrist", "rightHand"],
+  ["leftShoulder", "leftHip"],
+  ["rightShoulder", "rightHip"],
+  ["leftHip", "rightHip"],
+  ["leftHip", "leftKnee"],
+  ["leftKnee", "leftAnkle"],
+  ["rightHip", "rightKnee"],
+  ["rightKnee", "rightAnkle"],
+];
+
+const PHASES = ["Entry & Extension", "Catch", "Pull-Through", "Recovery"];
+
+export function PoseAnalysisView() {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const [playing, setPlaying] = useState(true);
+  const [speed, setSpeed] = useState(0.5);
+  const [t, setT] = useState(32);
+
+  // playback clock
+  useEffect(() => {
+    if (!playing) return;
+    const id = window.setInterval(() => {
+      setT((v) => (v + speed * 0.6) % 100);
+    }, 40);
+    return () => window.clearInterval(id);
+  }, [playing, speed]);
+
+  // skeleton renderer
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const wrap = wrapRef.current;
+    if (!canvas || !wrap) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = wrap.clientWidth;
+    const h = wrap.clientHeight;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    const phase = (t / 100) * Math.PI * 2;
+    const pts: Record<string, [number, number]> = {};
+    for (const [k, [x, y]] of Object.entries(BASE)) {
+      const amp = k.includes("Wrist") || k.includes("Hand") ? 0.05 : k.includes("Elbow") ? 0.032 : 0.014;
+      pts[k] = [(x + Math.sin(phase + x * 5) * amp) * w, (y + Math.cos(phase + y * 4) * amp) * h];
+    }
+
+    ctx.lineCap = "round";
+    for (const [a, b] of EDGES) {
+      const p1 = pts[a];
+      const p2 = pts[b];
+      if (!p1 || !p2) continue;
+      ctx.strokeStyle = "rgba(56, 232, 240, 0.85)";
+      ctx.shadowColor = "rgba(56, 232, 240, 0.9)";
+      ctx.shadowBlur = 10;
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      ctx.moveTo(p1[0], p1[1]);
+      ctx.lineTo(p2[0], p2[1]);
+      ctx.stroke();
+    }
+
+    for (const [k, p] of Object.entries(pts)) {
+      const hot = k === "rightShoulder" || k === "rightElbow";
+      ctx.shadowBlur = 12;
+      ctx.shadowColor = hot ? "rgba(255,120,110,0.95)" : "rgba(56,232,240,0.95)";
+      ctx.fillStyle = hot ? "#ff8a7a" : "#eafcff";
+      ctx.beginPath();
+      ctx.arc(p[0], p[1], hot ? 5 : 3.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.shadowBlur = 0;
+  }, [t]);
+
+  const elbowAngle = Math.round(88 + Math.sin((t / 100) * Math.PI * 2) * 6);
+  const bodyRoll = Math.round(22 + Math.cos((t / 100) * Math.PI * 2) * 4);
+  const strokePhase = PHASES[Math.floor((t / 100) * PHASES.length) % PHASES.length];
+
+  const fmt = (v: number) => {
+    const secs = (v / 100) * 84;
+    return `${String(Math.floor(secs / 60)).padStart(2, "0")}:${String(Math.floor(secs % 60)).padStart(2, "0")}`;
+  };
+
+  return (
+    <div className="space-y-4">
+      <div
+        ref={wrapRef}
+        className="glow-ring relative aspect-video w-full overflow-hidden rounded-2xl border border-primary/20 bg-black"
+      >
+        <img
+          src={swimmer}
+          alt="Underwater freestyle stroke frame under pose analysis"
+          width={1280}
+          height={720}
+          className="absolute inset-0 size-full object-cover opacity-90"
+        />
+        <canvas ref={canvasRef} className="absolute inset-0 size-full" />
+
+        {/* HUD */}
+        <div className="pointer-events-none absolute inset-0 flex flex-col justify-between p-2.5 sm:p-4">
+          <div className="flex items-start justify-between gap-2">
+            <div className="space-y-1.5">
+              <HudChip label="Elbow Catch Angle" value={`${elbowAngle}°`} sub="Target 90°–110°" tone={elbowAngle < 90 ? "warn" : "ok"} />
+              <HudChip label="Body Roll Angle" value={`${bodyRoll}°`} sub="WARN: Low Roll" tone="warn" />
+            </div>
+            <div className="rounded-lg border border-primary/30 bg-background/70 px-2.5 py-1.5 text-right backdrop-blur-md">
+              <p className="text-[10px] tracking-wider text-muted-foreground uppercase">Stroke Phase</p>
+              <p className="font-mono text-xs font-semibold text-primary sm:text-sm">{strokePhase}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="flex items-center gap-1.5 rounded-full border border-primary/30 bg-background/70 px-2.5 py-1 font-mono text-[10px] text-primary backdrop-blur-md">
+              <Activity className="size-3" /> 33 landmarks · 92% conf
+            </span>
+            <span className="rounded-full border border-border bg-background/70 px-2.5 py-1 font-mono text-[10px] text-muted-foreground backdrop-blur-md">
+              {fmt(t)} / 01:24
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Controls */}
+      <div className="glass-card space-y-4 rounded-2xl p-4">
+        <Slider value={[t]} onValueChange={([v]) => setT(v ?? 0)} max={100} step={0.5} />
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-1.5">
+            <Button variant="ghost" size="icon" onClick={() => setT((v) => Math.max(0, v - 5))}>
+              <SkipBack className="size-4" />
+            </Button>
+            <Button variant="hero" size="icon" onClick={() => setPlaying((p) => !p)}>
+              {playing ? <Pause className="size-4" /> : <Play className="size-4" />}
+            </Button>
+            <Button variant="ghost" size="icon" onClick={() => setT((v) => Math.min(100, v + 5))}>
+              <SkipForward className="size-4" />
+            </Button>
+          </div>
+          <div className="flex items-center gap-1 rounded-full border border-border bg-secondary/60 p-1">
+            <Gauge className="mx-1 size-3.5 text-muted-foreground" />
+            {[1, 0.5, 0.25].map((s) => (
+              <button
+                key={s}
+                onClick={() => setSpeed(s)}
+                className={cn(
+                  "rounded-full px-2.5 py-1 font-mono text-xs transition-colors",
+                  speed === s ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {s}x
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          <Metric label="Stroke Rate" value="34 spm" />
+          <Metric label="DPS" value="2.1 m" />
+          <Metric label="Symmetry" value="87%" />
+        </div>
+      </div>
+
+      <p className="flex items-center gap-2 text-xs text-muted-foreground">
+        <RotateCw className="size-3.5 shrink-0 text-primary" />
+        Frame-by-frame joint tracking simulated from the latest uploaded session.
+      </p>
+    </div>
+  );
+}
+
+function HudChip({
+  label,
+  value,
+  sub,
+  tone,
+}: {
+  label: string;
+  value: string;
+  sub: string;
+  tone: "ok" | "warn";
+}) {
+  return (
+    <div className="rounded-lg border border-border/70 bg-background/70 px-2.5 py-1.5 backdrop-blur-md">
+      <p className="text-[10px] tracking-wider text-muted-foreground uppercase">{label}</p>
+      <p className="font-mono text-sm font-semibold sm:text-base">
+        {value}{" "}
+        <span className={cn("text-[10px] font-medium", tone === "warn" ? "text-warning" : "text-success")}>
+          {sub}
+        </span>
+      </p>
+    </div>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-border bg-secondary/40 p-2.5 text-center">
+      <p className="text-[10px] tracking-wide text-muted-foreground uppercase">{label}</p>
+      <p className="mt-0.5 font-mono text-sm font-semibold text-primary">{value}</p>
+    </div>
+  );
+}
