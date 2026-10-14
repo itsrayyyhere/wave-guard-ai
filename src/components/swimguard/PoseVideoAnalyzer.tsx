@@ -13,10 +13,9 @@ const CONNECTIONS: [number, number][] = [
 ];
 
 function angleAt(a: LM, b: LM, c: LM) {
-  const v1 = [a.x - b.x, a.y - b.y];
-  const v2 = [c.x - b.x, c.y - b.y];
-  const dot = v1[0] * v2[0] + v1[1] * v2[1];
-  const m = Math.hypot(...v1) * Math.hypot(...v2) || 1;
+  const x1 = a.x - b.x, y1 = a.y - b.y, x2 = c.x - b.x, y2 = c.y - b.y;
+  const dot = x1 * x2 + y1 * y2;
+  const m = Math.hypot(x1, y1) * Math.hypot(x2, y2) || 1;
   return (Math.acos(Math.max(-1, Math.min(1, dot / m))) * 180) / Math.PI;
 }
 
@@ -69,7 +68,7 @@ export function PoseVideoAnalyzer({
           runningMode: "VIDEO",
           numPoses: 1,
         })) as unknown as typeof landmarker;
-        if (cancelled) return landmarker?.close();
+        if (cancelled) { (landmarker as { close: () => void } | null)?.close(); return; }
         setStatus("ready");
 
         const loop = () => {
@@ -90,8 +89,10 @@ export function PoseVideoAnalyzer({
           const vw = v.videoWidth * s, vh = v.videoHeight * s;
           const ox = (w - vw) / 2, oy = (h - vh) / 2;
           const P = (l: LM): [number, number] => [ox + l.x * vw, oy + l.y * vh];
-          const lm = res.landmarks[0];
-          if (!lm) return;
+          const raw = res.landmarks[0];
+          if (!raw) return;
+          const lm = raw as LM[];
+          const g = (i: number) => lm[i] as LM;
           frames++;
           ctx.lineCap = "round";
           ctx.strokeStyle = "rgba(56,232,240,0.85)";
@@ -99,7 +100,7 @@ export function PoseVideoAnalyzer({
           ctx.shadowBlur = 10;
           ctx.lineWidth = 2.4;
           for (const [a, b] of CONNECTIONS) {
-            const [x1, y1] = P(lm[a]); const [x2, y2] = P(lm[b]);
+            const [x1, y1] = P(g(a)); const [x2, y2] = P(g(b));
             ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
           }
           lm.forEach((l, i) => {
@@ -110,8 +111,8 @@ export function PoseVideoAnalyzer({
             ctx.beginPath(); ctx.arc(x, y, hot ? 5 : 3.2, 0, Math.PI * 2); ctx.fill();
           });
           ctx.shadowBlur = 0;
-          const elbow = angleAt(lm[12], lm[14], lm[16]);
-          const roll = (Math.atan2(Math.abs(lm[12].z - lm[11].z), Math.abs(lm[12].x - lm[11].x) + 1e-6) * 180) / Math.PI;
+          const elbow = angleAt(g(12), g(14), g(16));
+          const roll = (Math.atan2(Math.abs(g(12).z - g(11).z), Math.abs(g(12).x - g(11).x) + 1e-6) * 180) / Math.PI;
           const conf = lm.reduce((acc, l) => acc + (l.visibility ?? 0), 0) / lm.length;
           onMetrics({ elbow: Math.round(elbow), roll: Math.round(roll), conf: Math.round(conf * 100), frames });
         };
