@@ -37,6 +37,7 @@ type TabId = (typeof TABS)[number]["id"];
 
 function SwimGuard() {
   const [tab, setTab] = useState<TabId>("dashboard");
+  const [file, setFile] = useState<File | null>(null);
 
   return (
     <div className="min-h-screen bg-background">
@@ -86,8 +87,16 @@ function SwimGuard() {
         </header>
 
         <main key={tab} className="animate-in fade-in slide-in-from-bottom-2 px-4 py-5 duration-300">
-          {tab === "dashboard" && <DashboardView onOpenSession={() => setTab("analysis")} />}
-          {tab === "analysis" && <PoseAnalysisView />}
+          {tab === "dashboard" && (
+            <DashboardView
+              onOpenSession={() => setTab("analysis")}
+              onFile={(f) => {
+                setFile(f);
+                setTab("analysis");
+              }}
+            />
+          )}
+          {tab === "analysis" && <PoseAnalysisView file={file} />}
           {tab === "report" && <ReportView />}
         </main>
 

@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
   UploadCloud,
   Video,
@@ -40,19 +40,38 @@ const riskMeta = {
   high: { label: "High Shoulder Risk", cls: "bg-destructive/15 text-destructive border-destructive/30", Icon: AlertTriangle },
 } as const;
 
-export function DashboardView({ onOpenSession }: { onOpenSession: () => void }) {
+export function DashboardView({
+  onOpenSession,
+  onFile,
+}: {
+  onOpenSession: () => void;
+  onFile: (f: File) => void;
+}) {
   const [dragging, setDragging] = useState(false);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  const accept = useCallback(
+    (f?: File) => {
+      if (!f) return;
+      if (!f.type.startsWith("video/")) {
+        toast.error("Please choose a video file (MP4 / MOV / WebM)");
+        return;
+      }
+      toast.success("Video loaded for pose analysis", {
+        description: "Running MediaPipe 33-point extraction…",
+      });
+      onFile(f);
+    },
+    [onFile],
+  );
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
       setDragging(false);
-      toast.success("Video queued for pose analysis", {
-        description: "Running MediaPipe 33-point extraction…",
-      });
-      onOpenSession();
+      accept(e.dataTransfer.files[0]);
     },
-    [onOpenSession],
+    [accept],
   );
 
   return (
@@ -76,9 +95,19 @@ export function DashboardView({ onOpenSession }: { onOpenSession: () => void }) 
         </div>
         <h2 className="mt-4 text-lg font-semibold">Upload Swim Video for Pose Analysis</h2>
         <p className="mx-auto mt-1 max-w-xs text-sm text-muted-foreground">
-          Drag &amp; drop underwater or deck footage. MP4 / MOV up to 2 GB, 60fps recommended.
+          Drag &amp; drop underwater or deck footage. MP4 / MOV / WebM, 60fps recommended.
         </p>
-        <Button variant="hero" size="lg" className="mt-5" onClick={onOpenSession}>
+        <input
+          ref={inputRef}
+          type="file"
+          accept="video/*"
+          className="hidden"
+          onChange={(e) => {
+            accept(e.target.files?.[0]);
+            e.target.value = "";
+          }}
+        />
+        <Button variant="hero" size="lg" className="mt-5" onClick={() => inputRef.current?.click()}>
           <FileVideo className="size-4" />
           Browse Files
         </Button>
