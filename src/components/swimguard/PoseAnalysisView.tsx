@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { PoseVideoAnalyzer, type LiveMetrics } from "./PoseVideoAnalyzer";
 import { Play, Pause, SkipBack, SkipForward, Gauge, Activity, RotateCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
@@ -52,7 +53,55 @@ const EDGES: [string, string][] = [
 
 const PHASES = ["Entry & Extension", "Catch", "Pull-Through", "Recovery"];
 
-export function PoseAnalysisView() {
+export function PoseAnalysisView({ file }: { file?: File | null }) {
+  const [speed, setSpeed] = useState(0.5);
+  const [live, setLive] = useState<LiveMetrics | null>(null);
+  const onMetrics = useCallback((m: LiveMetrics) => setLive(m), []);
+  if (!file) return <DemoPoseView />;
+  const elbowOk = live ? live.elbow >= 90 && live.elbow <= 110 : true;
+  const rollOk = live ? live.roll >= 35 && live.roll <= 45 : true;
+  return (
+    <div className="space-y-4">
+      <div className="glow-ring relative aspect-video w-full overflow-hidden rounded-2xl border border-primary/20 bg-black">
+        <PoseVideoAnalyzer file={file} playbackRate={speed} onMetrics={onMetrics} />
+        <div className="pointer-events-none absolute top-2.5 left-2.5 space-y-1.5 sm:top-4 sm:left-4">
+          <HudChip label="R Elbow Angle" value={live ? `${live.elbow}°` : "—"} sub="Target 90°–110°" tone={elbowOk ? "ok" : "warn"} />
+          <HudChip label="Shoulder Roll" value={live ? `${live.roll}°` : "—"} sub="Target 35°–45°" tone={rollOk ? "ok" : "warn"} />
+        </div>
+        <span className="pointer-events-none absolute top-2.5 right-2.5 flex items-center gap-1.5 rounded-full border border-primary/30 bg-background/70 px-2.5 py-1 font-mono text-[10px] text-primary backdrop-blur-md sm:top-4 sm:right-4">
+          <Activity className="size-3" /> 33 landmarks · {live?.conf ?? 0}% conf
+        </span>
+      </div>
+      <div className="glass-card flex items-center justify-between gap-3 rounded-2xl p-4">
+        <p className="min-w-0 truncate text-sm">
+          <span className="font-medium">{file.name}</span>
+          <span className="block text-xs text-muted-foreground">{live?.frames ?? 0} frames analyzed</span>
+        </p>
+        <div className="flex items-center gap-1 rounded-full border border-border bg-secondary/60 p-1">
+          <Gauge className="mx-1 size-3.5 text-muted-foreground" />
+          {[1, 0.5, 0.25].map((s) => (
+            <button
+              key={s}
+              onClick={() => setSpeed(s)}
+              className={cn(
+                "rounded-full px-2.5 py-1 font-mono text-xs transition-colors",
+                speed === s ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {s}x
+            </button>
+          ))}
+        </div>
+      </div>
+      <p className="flex items-center gap-2 text-xs text-muted-foreground">
+        <RotateCw className="size-3.5 shrink-0 text-primary" />
+        MediaPipe Pose runs on your device — the video never leaves your browser.
+      </p>
+    </div>
+  );
+}
+
+function DemoPoseView() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const [playing, setPlaying] = useState(true);
