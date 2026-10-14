@@ -1,11 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { LayoutDashboard, ScanLine, HeartPulse, Waves, User } from "lucide-react";
+import { LayoutDashboard, ScanLine, HeartPulse, Waves, User, Gamepad2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Toaster } from "@/components/ui/sonner";
 import { DashboardView } from "@/components/swimguard/DashboardView";
 import { PoseAnalysisView } from "@/components/swimguard/PoseAnalysisView";
 import { ReportView } from "@/components/swimguard/ReportView";
+import { GamesView } from "@/components/swimguard/GamesView";
 
 export const Route = createFileRoute("/")({
   head: () => ({
