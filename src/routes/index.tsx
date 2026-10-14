@@ -1,11 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { LayoutDashboard, ScanLine, HeartPulse, Waves, User } from "lucide-react";
+import { LayoutDashboard, ScanLine, HeartPulse, Waves, User, Gamepad2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Toaster } from "@/components/ui/sonner";
 import { DashboardView } from "@/components/swimguard/DashboardView";
 import { PoseAnalysisView } from "@/components/swimguard/PoseAnalysisView";
 import { ReportView } from "@/components/swimguard/ReportView";
+import { GamesView } from "@/components/swimguard/GamesView";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -31,6 +32,7 @@ const TABS = [
   { id: "dashboard", label: "Upload", Icon: LayoutDashboard },
   { id: "analysis", label: "Analysis", Icon: ScanLine },
   { id: "report", label: "Risk", Icon: HeartPulse },
+  { id: "games", label: "Games", Icon: Gamepad2 },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -98,6 +100,7 @@ function SwimGuard() {
           )}
           {tab === "analysis" && <PoseAnalysisView file={file} />}
           {tab === "report" && <ReportView />}
+          {tab === "games" && <GamesView />}
         </main>
 
         <footer className="px-4 pb-8 text-center text-[11px] text-muted-foreground">
