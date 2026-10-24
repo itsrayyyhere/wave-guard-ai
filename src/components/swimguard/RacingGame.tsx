@@ -1,235 +1,318 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Car, Check, Flag, RotateCcw, X } from "lucide-react";
+import { ArrowLeft, Car, Check, Flag, Minus, Plus, RotateCcw, Timer, Trophy, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  BOT_LEVELS,
+  MAX_OPPONENTS,
+  MIN_OPPONENTS,
+  RACE_GOAL,
+  WRONG_PENALTY_MS,
+  type BotLevel,
+  type RaceQuestion,
+} from "@/lib/race/questions";
+import { useQuestionFeed } from "./useQuestionFeed";
 
-type Question = { q: string; options: string[]; answer: number };
+type Phase = "lobby" | "countdown" | "racing" | "done";
 
-const QUESTIONS: Question[] = [
-  {
-    q: "What is the recommended trunk rotation (body roll) range in freestyle?",
-    options: ["10–20°", "35–45°", "60–75°", "90°"],
-    answer: 1,
-  },
-  {
-    q: "During the recovery phase, where should the elbow be relative to the wrist?",
-    options: ["Below the wrist", "Level with the wrist", "Above the wrist", "It doesn't matter"],
-    answer: 2,
-  },
-  {
-    q: "A dropped elbow during the pull most often stresses which joint?",
-    options: ["Knee", "Shoulder", "Ankle", "Hip"],
-    answer: 1,
-  },
-  {
-    q: "Which drill is used to train a high-elbow recovery?",
-    options: ["Fingertip Drag", "Flip turn", "Breaststroke kick", "Treading water"],
-    answer: 0,
-  },
-  {
-    q: "Crossing the hand over the midline at entry can lead to…",
-    options: ["Faster kick", "Shoulder impingement", "Better breathing", "Longer glide"],
-    answer: 1,
-  },
-  {
-    q: "Where should the hand enter the water in freestyle?",
-    options: ["Behind the head", "In line with the shoulder", "Across the centerline", "Next to the hip"],
-    answer: 1,
-  },
-  {
-    q: "What does the 'catch' phase of the stroke refer to?",
-    options: [
-      "Breathing to the side",
-      "Pushing off the wall",
-      "Setting the forearm to grip the water",
-      "Kicking from the hips",
-    ],
-    answer: 2,
-  },
-  {
-    q: "Insufficient body roll forces the swimmer to…",
-    options: [
-      "Recover with a straighter, wider arm",
-      "Kick less",
-      "Breathe more easily",
-      "Float higher",
-    ],
-    answer: 0,
-  },
-  {
-    q: "Which drill improves balance and rotation on the side?",
-    options: ["Kick on Side", "Butterfly kick", "Sculling on back", "Dolphin dive"],
-    answer: 0,
-  },
-  {
-    q: "Where should a swimmer's head be during freestyle?",
-    options: ["Lifted looking forward", "Neutral, eyes looking down", "Tilted far back", "Turned to one side"],
-    answer: 1,
-  },
-  {
-    q: "Which muscles help stabilize the shoulder blade during the pull?",
-    options: ["Calves", "Quadriceps", "Scapular stabilizers", "Hamstrings"],
-    answer: 2,
-  },
-  {
-    q: "A common sign of shoulder overload in swimmers is…",
-    options: ["Pain at the front/top of the shoulder", "Tingling toes", "Sore jaw", "Stiff ankles"],
-    answer: 0,
-  },
+type Racer = {
+  id: string;
+  name: string;
+  level: BotLevel | null;
+  position: number;
+  finishedAt: number | null;
+};
+
+const PLAYER_ID = "you";
+const BOT_NAMES = ["Torpedo", "Riptide", "Splash"];
+const LANE_STYLES = [
+  "bg-[image:var(--gradient-cyan)] text-primary-foreground glow-ring",
+  "bg-success text-success-foreground",
+  "bg-warning text-warning-foreground",
+  "bg-chart-5 text-foreground",
 ];
+const LEVEL_ORDER: BotLevel[] = ["rookie", "pro", "olympian"];
 
-const TRACK_STEPS = 8;
-const QUESTIONS_PER_RACE = 10;
+const randomBetween = (min: number, max: number) => min + Math.random() * (max - min);
+const fmt = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
 
-function shuffle<T>(arr: T[]): T[] {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    const tmp = a[i] as T;
-    a[i] = a[j] as T;
-    a[j] = tmp;
-  }
-  return a;
+function makeRacers(levels: BotLevel[]): Racer[] {
+  return [
+    { id: PLAYER_ID, name: "You", level: null, position: 0, finishedAt: null },
+    ...levels.map((level, i) => ({
+      id: `bot-${i}`,
+      name: BOT_NAMES[i] ?? `Bot ${i + 1}`,
+      level,
+      position: 0,
+      finishedAt: null,
+    })),
+  ];
 }
 
-function newRace() {
-  return shuffle(QUESTIONS).slice(0, QUESTIONS_PER_RACE);
+function rankRacers(racers: Racer[]) {
+  return [...racers].sort((a, b) => {
+    if (a.finishedAt != null && b.finishedAt != null) return a.finishedAt - b.finishedAt;
+    if (a.finishedAt != null) return -1;
+    if (b.finishedAt != null) return 1;
+    return b.position - a.position;
+  });
 }
 
 export function RacingGame({ onExit }: { onExit: () => void }) {
-  const [questions, setQuestions] = useState<Question[]>(() => newRace());
-  const [index, setIndex] = useState(0);
-  const [position, setPosition] = useState(0);
+  const feed = useQuestionFeed();
+  const [phase, setPhase] = useState<Phase>("lobby");
+  const [opponents, setOpponents] = useState<BotLevel[]>(["pro"]);
+  const [racers, setRacers] = useState<Racer[]>(() => makeRacers(["pro"]));
+  const [count, setCount] = useState(3);
+  const [now, setNow] = useState(0);
+  const [question, setQuestion] = useState<RaceQuestion | null>(null);
   const [picked, setPicked] = useState<number | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [penaltyEnd, setPenaltyEnd] = useState<number | null>(null);
 
-  useEffect(() => () => {
-    if (timer.current) clearTimeout(timer.current);
-  }, []);
+  const startRef = useRef(0);
+  const playerTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const finished = position >= TRACK_STEPS;
-  const outOfQuestions = index >= questions.length;
-  const done = finished || outOfQuestions;
-  const current = questions[index];
+  // Warm up the question supply as soon as the game opens.
+  useEffect(() => {
+    void feed.prefetch();
+  }, [feed.prefetch]);
+
+  useEffect(
+    () => () => {
+      if (playerTimer.current) clearTimeout(playerTimer.current);
+    },
+    [],
+  );
+
+  // Countdown 3-2-1-GO
+  useEffect(() => {
+    if (phase !== "countdown") return;
+    if (count <= 0) {
+      startRef.current = performance.now();
+      setNow(0);
+      setQuestion(feed.next());
+      setPhase("racing");
+      return;
+    }
+    const t = setTimeout(() => setCount((c) => c - 1), 800);
+    return () => clearTimeout(t);
+  }, [phase, count, feed]);
+
+  // Race clock
+  useEffect(() => {
+    if (phase !== "racing") return;
+    const id = setInterval(() => setNow(performance.now() - startRef.current), 100);
+    return () => clearInterval(id);
+  }, [phase]);
+
+  // Bots answer on their own schedule
+  useEffect(() => {
+    if (phase !== "racing") return;
+    const timers = new Set<ReturnType<typeof setTimeout>>();
+    opponents.forEach((level, i) => {
+      const id = `bot-${i}`;
+      const cfg = BOT_LEVELS[level];
+      let pos = 0;
+      const step = (extra: number) => {
+        const t = setTimeout(() => {
+          timers.delete(t);
+          if (Math.random() < cfg.accuracy) {
+            pos += 1;
+            const at = performance.now() - startRef.current;
+            const p = pos;
+            setRacers((rs) =>
+              rs.map((r) =>
+                r.id === id ? { ...r, position: p, finishedAt: p >= RACE_GOAL ? at : null } : r,
+              ),
+            );
+            if (pos < RACE_GOAL) step(0);
+          } else {
+            step(WRONG_PENALTY_MS);
+          }
+        }, randomBetween(cfg.minMs, cfg.maxMs) + extra);
+        timers.add(t);
+      };
+      step(0);
+    });
+    return () => timers.forEach(clearTimeout);
+  }, [phase, opponents]);
+
+  // End of race: you finished, or every bot already did
+  useEffect(() => {
+    if (phase !== "racing") return;
+    const me = racers.find((r) => r.id === PLAYER_ID);
+    const bots = racers.filter((r) => r.id !== PLAYER_ID);
+    if (me?.finishedAt != null || bots.every((b) => b.finishedAt != null)) {
+      if (playerTimer.current) clearTimeout(playerTimer.current);
+      setNow(performance.now() - startRef.current);
+      setPhase("done");
+    }
+  }, [racers, phase]);
+
+  function startRace() {
+    if (playerTimer.current) clearTimeout(playerTimer.current);
+    setRacers(makeRacers(opponents));
+    setPicked(null);
+    setPenaltyEnd(null);
+    setQuestion(null);
+    setCount(3);
+    setPhase("countdown");
+  }
 
   function answer(i: number) {
-    if (picked !== null || done || !current) return;
+    if (phase !== "racing" || !question || picked !== null) return;
     setPicked(i);
-    const correct = i === current.answer;
-    if (correct) setPosition((p) => Math.min(p + 1, TRACK_STEPS));
-    timer.current = setTimeout(() => {
-      setPicked(null);
-      setIndex((n) => n + 1);
-    }, 1000);
+    if (i === question.answer) {
+      const at = performance.now() - startRef.current;
+      setRacers((rs) =>
+        rs.map((r) => {
+          if (r.id !== PLAYER_ID) return r;
+          const p = r.position + 1;
+          return { ...r, position: p, finishedAt: p >= RACE_GOAL ? at : null };
+        }),
+      );
+      playerTimer.current = setTimeout(() => {
+        setPicked(null);
+        setQuestion(feed.next());
+      }, 450);
+    } else {
+      setPenaltyEnd(performance.now() + WRONG_PENALTY_MS);
+      playerTimer.current = setTimeout(() => {
+        setPicked(null);
+        setPenaltyEnd(null);
+        setQuestion(feed.next());
+      }, WRONG_PENALTY_MS);
+    }
   }
 
-  function restart() {
-    if (timer.current) clearTimeout(timer.current);
-    setQuestions(newRace());
-    setIndex(0);
-    setPosition(0);
-    setPicked(null);
+  const me = racers.find((r) => r.id === PLAYER_ID);
+  const penaltyLeft =
+    penaltyEnd != null ? Math.max(0, penaltyEnd - (startRef.current + now)) : 0;
+
+  // ---------- Lobby ----------
+  if (phase === "lobby") {
+    return (
+      <div className="space-y-5 pb-16">
+        <BackButton onClick={onExit} label="Games" />
+        <section className="glass-card rounded-2xl p-5 text-center">
+          <span className="glow-ring mx-auto grid size-12 place-items-center rounded-xl bg-[image:var(--gradient-cyan)] text-primary-foreground">
+            <Car className="size-7" />
+          </span>
+          <h2 className="mt-3 text-lg font-semibold">Drag Race</h2>
+          <p className="mx-auto mt-1 max-w-xs text-sm text-muted-foreground">
+            First to {RACE_GOAL} correct answers wins. A wrong answer locks you out for{" "}
+            {WRONG_PENALTY_MS / 1000}s.
+          </p>
+        </section>
+
+        <section className="glass-card space-y-3 rounded-2xl p-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold">Opponents</h3>
+            <span className="text-xs text-muted-foreground">{opponents.length + 1} tracks</span>
+          </div>
+          <ul className="space-y-2">
+            {opponents.map((level, i) => (
+              <li key={i} className="flex items-center gap-2 rounded-xl border border-border bg-secondary/40 p-2">
+                <span className={cn("grid size-8 shrink-0 place-items-center rounded-lg", LANE_STYLES[i + 1])}>
+                  <Car className="size-4" />
+                </span>
+                <span className="w-16 shrink-0 truncate text-sm font-medium">{BOT_NAMES[i]}</span>
+                <div className="flex flex-1 gap-1">
+                  {LEVEL_ORDER.map((l) => (
+                    <button
+                      key={l}
+                      onClick={() =>
+                        setOpponents((ops) => ops.map((o, j) => (j === i ? l : o)))
+                      }
+                      className={cn(
+                        "flex-1 rounded-lg px-1.5 py-1.5 text-[11px] font-medium transition-colors",
+                        level === l
+                          ? "bg-primary/15 text-primary"
+                          : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+                      )}
+                    >
+                      {BOT_LEVELS[l].label}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  aria-label={`Remove ${BOT_NAMES[i]}`}
+                  disabled={opponents.length <= MIN_OPPONENTS}
+                  onClick={() => setOpponents((ops) => ops.filter((_, j) => j !== i))}
+                  className="grid size-7 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-30"
+                >
+                  <Minus className="size-4" />
+                </button>
+              </li>
+            ))}
+          </ul>
+          {opponents.length < MAX_OPPONENTS && (
+            <button
+              onClick={() => setOpponents((ops) => [...ops, "pro"])}
+              className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-border py-2.5 text-sm text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
+            >
+              <Plus className="size-4" /> Add opponent
+            </button>
+          )}
+        </section>
+
+        <button
+          onClick={startRace}
+          className="glow-ring flex w-full items-center justify-center gap-2 rounded-full bg-[image:var(--gradient-cyan)] py-3 text-sm font-semibold text-primary-foreground transition-transform active:scale-[0.98]"
+        >
+          <Flag className="size-4" /> Start race
+        </button>
+      </div>
+    );
   }
 
-  const progressPct = (position / TRACK_STEPS) * 100;
-
+  // ---------- Countdown / Racing / Done ----------
   return (
     <div className="space-y-5 pb-16">
       <div className="flex items-center justify-between">
-        <button
-          onClick={onExit}
-          className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground"
-        >
-          <ArrowLeft className="size-4" />
-          Games
-        </button>
-        <span className="text-xs font-medium text-muted-foreground">
-          {done ? "Race over" : `Question ${index + 1} / ${questions.length}`}
+        <BackButton onClick={() => setPhase("lobby")} label={phase === "done" ? "Lobby" : "Quit"} />
+        <span className="flex items-center gap-1.5 font-mono text-sm text-muted-foreground">
+          <Timer className="size-4" />
+          {fmt(phase === "countdown" ? 0 : now)}
         </span>
       </div>
 
-      {/* Drag strip */}
-      <section className="glass-card overflow-hidden rounded-2xl p-4">
-        <div className="mb-2 flex items-center justify-between text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-          <span>Start</span>
-          <span>
-            {position} / {TRACK_STEPS}
-          </span>
-          <span className="flex items-center gap-1">
-            <Flag className="size-3.5" /> Finish
-          </span>
-        </div>
-
-        <div className="relative h-20 rounded-xl border border-border bg-secondary/50">
-          {/* step markers */}
-          <div className="absolute inset-y-0 right-10 left-10 flex justify-between">
-            {Array.from({ length: TRACK_STEPS + 1 }).map((_, i) => (
-              <span
-                key={i}
-                className={cn(
-                  "w-px",
-                  i === TRACK_STEPS ? "w-1.5 bg-[repeating-linear-gradient(0deg,var(--foreground)_0_6px,transparent_6px_12px)]" : "bg-border",
-                  i <= position && i !== TRACK_STEPS && "bg-primary/40",
-                )}
-              />
-            ))}
-          </div>
-          {/* centre dashes */}
-          <div className="absolute inset-x-10 top-1/2 h-px -translate-y-1/2 bg-[repeating-linear-gradient(90deg,var(--muted-foreground)_0_10px,transparent_10px_20px)] opacity-40" />
-
-          {/* car */}
-          <div className="absolute inset-y-0 right-10 left-10">
-            <div
-              className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 transition-[left] duration-700 ease-out"
-              style={{ left: `${progressPct}%` }}
-            >
-              <span
-                className={cn(
-                  "glow-ring grid size-12 place-items-center rounded-xl bg-[image:var(--gradient-cyan)] text-primary-foreground",
-                  picked !== null && picked === current?.answer && "animate-pulse",
-                )}
-              >
-                <Car className="size-7" />
-              </span>
-            </div>
-          </div>
-        </div>
+      <section className="glass-card space-y-3 rounded-2xl p-4">
+        {racers.map((r, i) => (
+          <Lane key={r.id} racer={r} style={LANE_STYLES[i] ?? ""} />
+        ))}
       </section>
 
-      {done || !current ? (
-        <section className="glass-card space-y-3 rounded-2xl p-5 text-center">
-          <h2 className="text-lg font-semibold">
-            {finished ? "You crossed the finish line!" : "Out of questions"}
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            {finished
-              ? `Finished in ${index} questions.`
-              : `Your car made it ${position} of ${TRACK_STEPS} steps.`}
-          </p>
-          <button
-            onClick={restart}
-            className="glow-ring mx-auto inline-flex items-center gap-2 rounded-full bg-[image:var(--gradient-cyan)] px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-transform active:scale-95"
-          >
-            <RotateCcw className="size-4" />
-            Race again
-          </button>
+      {phase === "countdown" && (
+        <section className="glass-card grid h-48 place-items-center rounded-2xl">
+          <span key={count} className="animate-in zoom-in-50 fade-in text-gradient-cyan font-display text-6xl font-bold duration-300">
+            {count > 0 ? count : "GO"}
+          </span>
         </section>
-      ) : (
-        <section className="glass-card space-y-4 rounded-2xl p-5">
-          <p className="text-base leading-snug font-medium">{current.q}</p>
+      )}
+
+      {phase === "racing" && question && (
+        <section className="glass-card relative space-y-4 overflow-hidden rounded-2xl p-5">
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>Your progress</span>
+            <span className="font-medium text-primary">
+              {me?.position ?? 0} / {RACE_GOAL}
+            </span>
+          </div>
+          <p className="text-base leading-snug font-medium">{question.q}</p>
           <ul className="grid gap-2">
-            {current.options.map((opt, i) => {
-              const isCorrect = i === current.answer;
+            {question.options.map((opt, i) => {
+              const isCorrect = i === question.answer;
               const isPicked = i === picked;
               const revealed = picked !== null;
               return (
-                <li key={opt}>
+                <li key={`${question.q}-${i}`}>
                   <button
                     onClick={() => answer(i)}
                     disabled={revealed}
                     className={cn(
                       "flex w-full items-center justify-between gap-3 rounded-xl border px-4 py-3 text-left text-sm transition-all",
                       !revealed && "border-border bg-secondary/40 hover:border-primary/50 hover:bg-accent/30",
-                      revealed && isCorrect && "border-success/60 bg-success/15 text-foreground",
+                      revealed && isCorrect && "border-success/60 bg-success/15",
                       revealed && isPicked && !isCorrect && "border-destructive/60 bg-destructive/15",
                       revealed && !isPicked && !isCorrect && "border-border bg-secondary/20 opacity-60",
                     )}
@@ -246,14 +329,133 @@ export function RacingGame({ onExit }: { onExit: () => void }) {
             <p
               className={cn(
                 "text-center text-sm font-medium",
-                picked === current.answer ? "text-success" : "text-destructive",
+                picked === question.answer ? "text-success" : "text-destructive",
               )}
             >
-              {picked === current.answer ? "Correct — car moves forward!" : "Wrong — car stays put."}
+              {picked === question.answer
+                ? "Correct — your car moves forward!"
+                : `Wrong — penalty ${(penaltyLeft / 1000).toFixed(1)}s`}
             </p>
           )}
         </section>
       )}
+
+      {phase === "done" && (
+        <Results racers={racers} onRestart={startRace} onLobby={() => setPhase("lobby")} />
+      )}
     </div>
+  );
+}
+
+function BackButton({ onClick, label }: { onClick: () => void; label: string }) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground"
+    >
+      <ArrowLeft className="size-4" />
+      {label}
+    </button>
+  );
+}
+
+function Lane({ racer, style }: { racer: Racer; style: string }) {
+  const pct = (racer.position / RACE_GOAL) * 100;
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between text-[11px]">
+        <span className="flex items-center gap-1.5 font-medium">
+          {racer.name}
+          {racer.level && (
+            <span className="rounded-full bg-secondary px-1.5 py-px text-[10px] text-muted-foreground">
+              {BOT_LEVELS[racer.level].label}
+            </span>
+          )}
+        </span>
+        <span className="font-mono text-muted-foreground">
+          {racer.finishedAt != null ? fmt(racer.finishedAt) : `${racer.position}/${RACE_GOAL}`}
+        </span>
+      </div>
+      <div className="relative h-11 rounded-lg border border-border bg-secondary/50">
+        <div className="absolute inset-y-0 right-6 left-6 flex justify-between">
+          {Array.from({ length: RACE_GOAL + 1 }).map((_, i) => (
+            <span
+              key={i}
+              className={cn(
+                "w-px bg-border",
+                i === RACE_GOAL && "w-1.5 bg-[repeating-linear-gradient(0deg,var(--foreground)_0_5px,transparent_5px_10px)]",
+              )}
+            />
+          ))}
+        </div>
+        <div className="absolute inset-y-0 right-6 left-6">
+          <div
+            className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 transition-[left] duration-500 ease-out"
+            style={{ left: `${pct}%` }}
+          >
+            <span className={cn("grid size-8 place-items-center rounded-lg", style)}>
+              <Car className="size-5" />
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Results({
+  racers,
+  onRestart,
+  onLobby,
+}: {
+  racers: Racer[];
+  onRestart: () => void;
+  onLobby: () => void;
+}) {
+  const ranked = rankRacers(racers);
+  const place = ranked.findIndex((r) => r.id === PLAYER_ID) + 1;
+  const won = place === 1 && ranked[0]?.finishedAt != null;
+  return (
+    <section className="glass-card space-y-4 rounded-2xl p-5">
+      <div className="text-center">
+        <Trophy className={cn("mx-auto size-8", won ? "text-warning" : "text-muted-foreground")} />
+        <h2 className="mt-2 text-lg font-semibold">
+          {won ? "You won the race!" : `You placed #${place}`}
+        </h2>
+      </div>
+      <ol className="space-y-1.5">
+        {ranked.map((r, i) => (
+          <li
+            key={r.id}
+            className={cn(
+              "flex items-center justify-between rounded-lg px-3 py-2 text-sm",
+              r.id === PLAYER_ID ? "bg-primary/12 text-primary" : "bg-secondary/40",
+            )}
+          >
+            <span className="flex items-center gap-2">
+              <span className="w-5 font-mono text-xs text-muted-foreground">#{i + 1}</span>
+              {r.name}
+            </span>
+            <span className="font-mono text-xs">
+              {r.finishedAt != null ? fmt(r.finishedAt) : `${r.position}/${RACE_GOAL}`}
+            </span>
+          </li>
+        ))}
+      </ol>
+      <div className="flex gap-2">
+        <button
+          onClick={onLobby}
+          className="flex-1 rounded-full border border-border py-2.5 text-sm font-medium transition-colors hover:bg-secondary"
+        >
+          Change opponents
+        </button>
+        <button
+          onClick={onRestart}
+          className="glow-ring flex flex-1 items-center justify-center gap-2 rounded-full bg-[image:var(--gradient-cyan)] py-2.5 text-sm font-semibold text-primary-foreground transition-transform active:scale-[0.98]"
+        >
+          <RotateCcw className="size-4" /> Race again
+        </button>
+      </div>
+    </section>
   );
 }
