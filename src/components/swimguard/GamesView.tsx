@@ -35,7 +35,7 @@ export function GamesView() {
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium">Racing</span>
                     <span className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
-                      Drag race powered by questions. Answer right to move forward — a wrong answer keeps you in place.
+                      Drag race 1–3 bots. First to 10 correct answers wins — wrong answers cost a short penalty.
                     </span>
                   </span>
                 </button>
