@@ -84,7 +84,9 @@ function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
+    const tmp = a[i] as T;
+    a[i] = a[j] as T;
+    a[j] = tmp;
   }
   return a;
 }
@@ -110,7 +112,7 @@ export function RacingGame({ onExit }: { onExit: () => void }) {
   const current = questions[index];
 
   function answer(i: number) {
-    if (picked !== null || done) return;
+    if (picked !== null || done || !current) return;
     setPicked(i);
     const correct = i === current.answer;
     if (correct) setPosition((p) => Math.min(p + 1, TRACK_STEPS));
@@ -193,7 +195,7 @@ export function RacingGame({ onExit }: { onExit: () => void }) {
         </div>
       </section>
 
-      {done ? (
+      {done || !current ? (
         <section className="glass-card space-y-3 rounded-2xl p-5 text-center">
           <h2 className="text-lg font-semibold">
             {finished ? "You crossed the finish line!" : "Out of questions"}
