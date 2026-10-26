@@ -94,8 +94,8 @@ function demoSnapshot(t: number): AnalysisSnapshot {
   const S = (avg: number, inRangePct: number | null): StatSummary => ({ n: 48, avg, min: avg - 6, max: avg + 6, inRangePct });
   const stats: Record<MetricKey, StatSummary | null> = {
     catchAngle: S(91, 58),
-    rightElbow: S(124, null),
-    leftElbow: S(128, null),
+    rightElbow: S(166, null),
+    leftElbow: S(171, null),
     shoulderRoll: S(22, 8),
     hipRoll: S(19, 21),
     head: S(15, 81),
