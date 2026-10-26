@@ -48,3 +48,12 @@ describe("arm tracker", () => {
     expect(arm.update(0.1, 0, -0.6, -0.3, 120).droppedElbow).toBe(false);
   });
 });
+
+describe("side swap correction", () => {
+  it("detects when MediaPipe swaps left and right limbs between frames", async () => {
+    const { isSideSwapped, swapSides } = await import("./metrics");
+    const prev = Array.from({ length: 33 }, (_, i) => ({ x: i * 10, y: i % 2 ? 100 : 0 }));
+    expect(isSideSwapped(prev, prev)).toBe(false);
+    expect(isSideSwapped(prev, swapSides(prev))).toBe(true);
+  });
+});

@@ -61,7 +61,7 @@ const EDGES: [string, string][] = [
 const PHASES = ["Entry & Extension", "Catch", "Pull-Through", "Recovery"];
 
 const fmtVal = (v: number | null | undefined, unit: string) =>
-  v === null || v === undefined ? "—" : `${Math.round(v)}${unit === "°" ? "°" : ` ${unit}`}`;
+  v === null || v === undefined ? "—" : `${Math.round(v)}${unit === "°" || unit === "%" ? unit : ` ${unit}`}`;
 
 export function PoseAnalysisView({ file }: { file?: File | null }) {
   const [speed, setSpeed] = useState(0.5);

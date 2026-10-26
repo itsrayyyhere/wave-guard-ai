@@ -103,6 +103,34 @@ export function rollAngle(left: V3, right: V3): number {
   return Math.asin(Math.min(1, Math.abs(dy) / len)) * DEG;
 }
 
+// Left/right landmark pairs, used to undo MediaPipe's occasional side swaps in profile views.
+const LR_PAIRS: [number, number][] = [
+  [1, 4], [2, 5], [3, 6], [7, 8], [9, 10], [11, 12], [13, 14], [15, 16], [17, 18], [19, 20],
+  [21, 22], [23, 24], [25, 26], [27, 28], [29, 30], [31, 32],
+];
+const SWAP_TRACK: [number, number][] = [[13, 14], [15, 16], [25, 26], [27, 28]];
+
+export function swapSides<T>(arr: T[]): T[] {
+  const out = arr.slice();
+  for (const [l, r] of LR_PAIRS) {
+    out[l] = arr[r]!;
+    out[r] = arr[l]!;
+  }
+  return out;
+}
+
+/** True when the current frame matches the previous frame better with left/right exchanged. */
+export function isSideSwapped(prev: V2[], cur: V2[]): boolean {
+  let same = 0, swapped = 0;
+  for (const [l, r] of SWAP_TRACK) {
+    const pl = prev[l], pr = prev[r], cl = cur[l], cr = cur[r];
+    if (!pl || !pr || !cl || !cr) continue;
+    same += Math.hypot(cl.x - pl.x, cl.y - pl.y) + Math.hypot(cr.x - pr.x, cr.y - pr.y);
+    swapped += Math.hypot(cl.x - pr.x, cl.y - pr.y) + Math.hypot(cr.x - pl.x, cr.y - pl.y);
+  }
+  return same > 0 && swapped < same * 0.5;
+}
+
 const mid2 = (a: V2, b: V2): V2 => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
 
 // ---------- temporal helpers ----------
@@ -188,7 +216,12 @@ export class ArmTracker {
       if (this.state === "front") {
         const abs = Math.abs(forward);
         if (abs < 1 && (!this.best || abs < this.best.abs)) this.best = { abs, elbow: elbowAngle };
-        if (forward < -H) {
+        const last = this.strokeTimes[this.strokeTimes.length - 1];
+        if (forward < -H && last !== undefined && t - last < 0.5) {
+          // too soon after the previous stroke for this arm → jitter, not a real stroke
+          this.state = "back";
+          this.best = null;
+        } else if (forward < -H) {
           this.state = "back";
           ev.stroke = true;
           this.strokeTimes.push(t);
@@ -272,6 +305,8 @@ export class SwimAnalyzer {
   private dropped = 0;
   private side: "left" | "right" | null = null;
   private phase: ArmPhase | null = null;
+  private prevPx: V2[] | null = null;
+  private prevT = -Infinity;
 
   reset() {
     Object.assign(this, new SwimAnalyzer());
@@ -296,6 +331,15 @@ export class SwimAnalyzer {
       return;
     }
     this.tracked++;
+
+    // Undo left/right swaps by checking continuity with the previous frame
+    const toPx = (arr: Landmark[]) => arr.map((l) => ({ x: l.x * W, y: l.y * H }));
+    if (this.prevPx && t - this.prevT >= 0 && t - this.prevT < 0.25 && isSideSwapped(this.prevPx, toPx(lm))) {
+      lm = swapSides(lm);
+      world = swapSides(world);
+    }
+    this.prevPx = toPx(lm);
+    this.prevT = t;
 
     const vis = (i: number) => lm[i]?.visibility ?? 0;
     const ok = (...ids: number[]) => ids.every((i) => vis(i) >= VIS);
@@ -404,6 +448,7 @@ export class SwimAnalyzer {
     this.shoulderPeak.reset(); this.hipPeak.reset(); this.kneePeak.reset();
     for (const e of Object.values(this.ema)) e.reset();
     this.lastSample = -Infinity;
+    this.prevPx = null;
   }
 
   snapshot(): AnalysisSnapshot {
