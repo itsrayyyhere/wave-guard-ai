@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { PoseVideoAnalyzer, type LiveMetrics } from "./PoseVideoAnalyzer";
-import { Play, Pause, SkipBack, SkipForward, Gauge, Activity, RotateCw } from "lucide-react";
+import { PoseVideoAnalyzer, type PoseModel } from "./PoseVideoAnalyzer";
+import { Play, Pause, SkipBack, SkipForward, Gauge, Activity, RotateCw, RefreshCcw, Lightbulb } from "lucide-react";
+import {
+  METRICS,
+  inTarget,
+  type AnalysisSnapshot,
+  type MetricDef,
+  type StatSummary,
+} from "@/lib/pose/metrics";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
@@ -53,51 +60,233 @@ const EDGES: [string, string][] = [
 
 const PHASES = ["Entry & Extension", "Catch", "Pull-Through", "Recovery"];
 
+const fmtVal = (v: number | null | undefined, unit: string) =>
+  v === null || v === undefined ? "—" : `${Math.round(v)}${unit === "°" ? "°" : ` ${unit}`}`;
+
 export function PoseAnalysisView({ file }: { file?: File | null }) {
   const [speed, setSpeed] = useState(0.5);
-  const [live, setLive] = useState<LiveMetrics | null>(null);
-  const onMetrics = useCallback((m: LiveMetrics) => setLive(m), []);
+  const [model, setModel] = useState<PoseModel>("heavy");
+  const [snap, setSnap] = useState<AnalysisSnapshot | null>(null);
+  const [resetSignal, setResetSignal] = useState(0);
+  const [ended, setEnded] = useState(false);
+  const onSnapshot = useCallback((s: AnalysisSnapshot) => {
+    setSnap(s);
+    setEnded(false);
+  }, []);
+  const onEnded = useCallback(() => setEnded(true), []);
+
+  useEffect(() => {
+    setSnap(null);
+    setEnded(false);
+  }, [file]);
+
   if (!file) return <DemoPoseView />;
-  const elbowOk = live ? live.elbow >= 90 && live.elbow <= 110 : true;
-  const rollOk = live ? live.roll >= 35 && live.roll <= 45 : true;
+
+  const v = snap?.values;
+  const catchOk = v?.catchAngle != null ? inTarget("catchAngle", v.catchAngle) : null;
+  const trackedPct = snap && snap.frames ? Math.round((snap.tracked / snap.frames) * 100) : 0;
+
   return (
     <div className="space-y-4">
       <div className="glow-ring relative aspect-video w-full overflow-hidden rounded-2xl border border-primary/20 bg-black">
-        <PoseVideoAnalyzer file={file} playbackRate={speed} onMetrics={onMetrics} />
+        <PoseVideoAnalyzer
+          file={file}
+          playbackRate={speed}
+          model={model}
+          resetSignal={resetSignal}
+          onSnapshot={onSnapshot}
+          onEnded={onEnded}
+        />
         <div className="pointer-events-none absolute top-2.5 left-2.5 space-y-1.5 sm:top-4 sm:left-4">
-          <HudChip label="R Elbow Angle" value={live ? `${live.elbow}°` : "—"} sub="Target 90°–110°" tone={elbowOk ? "ok" : "warn"} />
-          <HudChip label="Shoulder Roll" value={live ? `${live.roll}°` : "—"} sub="Target 35°–45°" tone={rollOk ? "ok" : "warn"} />
+          <HudChip
+            label="Catch Angle"
+            value={fmtVal(v?.catchAngle, "°")}
+            sub="Target 90°–110°"
+            tone={catchOk === false ? "warn" : "ok"}
+          />
         </div>
-        <span className="pointer-events-none absolute top-2.5 right-2.5 flex items-center gap-1.5 rounded-full border border-primary/30 bg-background/70 px-2.5 py-1 font-mono text-[10px] text-primary backdrop-blur-md sm:top-4 sm:right-4">
-          <Activity className="size-3" /> 33 landmarks · {live?.conf ?? 0}% conf
-        </span>
+        <div className="pointer-events-none absolute top-2.5 right-2.5 flex flex-col items-end gap-1.5 sm:top-4 sm:right-4">
+          <span className="flex items-center gap-1.5 rounded-full border border-primary/30 bg-background/70 px-2.5 py-1 font-mono text-[10px] text-primary backdrop-blur-md">
+            <Activity className="size-3" /> {snap?.conf ?? 0}% conf
+          </span>
+          <div className="rounded-lg border border-primary/30 bg-background/70 px-2.5 py-1.5 text-right backdrop-blur-md">
+            <p className="text-[10px] tracking-wider text-muted-foreground uppercase">
+              Stroke Phase{snap?.side ? ` · ${snap.side} arm` : ""}
+            </p>
+            <p className="font-mono text-xs font-semibold text-primary sm:text-sm">{snap?.phase ?? "—"}</p>
+          </div>
+        </div>
       </div>
-      <div className="glass-card flex items-center justify-between gap-3 rounded-2xl p-4">
-        <p className="min-w-0 truncate text-sm">
-          <span className="font-medium">{file.name}</span>
-          <span className="block text-xs text-muted-foreground">{live?.frames ?? 0} frames analyzed</span>
-        </p>
-        <div className="flex items-center gap-1 rounded-full border border-border bg-secondary/60 p-1">
-          <Gauge className="mx-1 size-3.5 text-muted-foreground" />
-          {[1, 0.5, 0.25].map((s) => (
-            <button
-              key={s}
-              onClick={() => setSpeed(s)}
-              className={cn(
-                "rounded-full px-2.5 py-1 font-mono text-xs transition-colors",
-                speed === s ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {s}x
-            </button>
+
+      <div className="glass-card space-y-3 rounded-2xl p-4">
+        <div className="flex items-center justify-between gap-3">
+          <p className="min-w-0 truncate text-sm">
+            <span className="font-medium">{file.name}</span>
+            <span className="block text-xs text-muted-foreground">
+              {snap?.frames ?? 0} frames · swimmer tracked in {trackedPct}%
+            </span>
+          </p>
+          <div className="flex shrink-0 items-center gap-1 rounded-full border border-border bg-secondary/60 p-1">
+            <Gauge className="mx-1 size-3.5 text-muted-foreground" />
+            {[1, 0.5, 0.25].map((s) => (
+              <button
+                key={s}
+                onClick={() => setSpeed(s)}
+                className={cn(
+                  "rounded-full px-2.5 py-1 font-mono text-xs transition-colors",
+                  speed === s ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {s}x
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-1 rounded-full border border-border bg-secondary/60 p-1">
+            {(
+              [
+                ["heavy", "Precise"],
+                ["full", "Balanced"],
+              ] as const
+            ).map(([m, label]) => (
+              <button
+                key={m}
+                onClick={() => setModel(m)}
+                className={cn(
+                  "rounded-full px-3 py-1 text-xs font-medium transition-colors",
+                  model === m ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <Button variant="ghost" size="sm" onClick={() => setResetSignal((n) => n + 1)}>
+            <RefreshCcw className="size-3.5" /> Reset stats
+          </Button>
+        </div>
+      </div>
+
+      {/* Live metrics */}
+      <section className="space-y-2">
+        <h3 className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">Live technique metrics</h3>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {METRICS.map((m) => (
+            <MetricTile key={m.key} def={m} value={v?.[m.key] ?? null} stat={snap?.stats[m.key] ?? null} />
           ))}
+          <EventTile label="Strokes Counted" value={snap?.strokes ?? 0} hint="Hand passes under the shoulder" />
+          <EventTile
+            label="Dropped Elbows"
+            value={snap?.droppedElbows ?? 0}
+            hint="Wrist above elbow on recovery"
+            warn={(snap?.droppedElbows ?? 0) > 0}
+          />
+        </div>
+      </section>
+
+      <SessionSummary snap={snap} ended={ended} />
+
+      <div className="glass-card space-y-1.5 rounded-2xl p-4 text-xs text-muted-foreground">
+        <p className="flex items-center gap-2 font-medium text-foreground">
+          <Lightbulb className="size-3.5 text-primary" /> For the most accurate results
+        </p>
+        <p>Film side-on with the camera level and the whole body in frame. Use 0.5x or 0.25x so every frame is analyzed.</p>
+        <p>Faded joints are low-confidence and are left out of the numbers. Roll angles are estimated from depth and are less precise than joint angles.</p>
+        <p className="flex items-center gap-2 pt-1">
+          <RotateCw className="size-3.5 shrink-0 text-primary" />
+          MediaPipe Pose runs on your device — the video never leaves your browser.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function MetricTile({ def, value, stat }: { def: MetricDef; value: number | null; stat: StatSummary | null }) {
+  const ok = value === null ? null : inTarget(def.key, value);
+  const hasTarget = def.min !== undefined && def.max !== undefined;
+  return (
+    <div
+      className={cn(
+        "rounded-xl border bg-secondary/40 p-3",
+        ok === false ? "border-warning/40" : ok === true ? "border-success/40" : "border-border",
+      )}
+    >
+      <p className="truncate text-[10px] tracking-wide text-muted-foreground uppercase">{def.label}</p>
+      <p
+        className={cn(
+          "mt-0.5 font-mono text-lg font-semibold",
+          ok === false ? "text-warning" : ok === true ? "text-success" : "text-primary",
+        )}
+      >
+        {fmtVal(value, def.unit)}
+      </p>
+      <p className="truncate text-[10px] text-muted-foreground">
+        {hasTarget ? `Target ${def.min}–${def.max}${def.unit === "°" ? "°" : def.unit}` : def.hint}
+      </p>
+      {stat && (
+        <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground">
+          avg {fmtVal(stat.avg, def.unit)}
+          {stat.inRangePct !== null && ` · ${Math.round(stat.inRangePct)}% in range`}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function EventTile({ label, value, hint, warn }: { label: string; value: number; hint: string; warn?: boolean }) {
+  return (
+    <div className={cn("rounded-xl border bg-secondary/40 p-3", warn ? "border-warning/40" : "border-border")}>
+      <p className="truncate text-[10px] tracking-wide text-muted-foreground uppercase">{label}</p>
+      <p className={cn("mt-0.5 font-mono text-lg font-semibold", warn ? "text-warning" : "text-primary")}>{value}</p>
+      <p className="truncate text-[10px] text-muted-foreground">{hint}</p>
+    </div>
+  );
+}
+
+function SessionSummary({ snap, ended }: { snap: AnalysisSnapshot | null; ended: boolean }) {
+  const rows = METRICS.filter((m) => m.min !== undefined && snap?.stats[m.key]);
+  return (
+    <section className="glass-card space-y-3 rounded-2xl p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold">Session summary</h3>
+          <p className="text-xs text-muted-foreground">
+            {ended ? "Analysis complete — full video processed." : "Updates as the video plays."}
+          </p>
+        </div>
+        <div className="text-right">
+          <p className="text-[10px] tracking-wider text-muted-foreground uppercase">Technique score</p>
+          <p className="font-mono text-2xl font-bold text-gradient-cyan">{snap?.score ?? "—"}</p>
         </div>
       </div>
-      <p className="flex items-center gap-2 text-xs text-muted-foreground">
-        <RotateCw className="size-3.5 shrink-0 text-primary" />
-        MediaPipe Pose runs on your device — the video never leaves your browser.
-      </p>
-    </div>
+      {rows.length === 0 ? (
+        <p className="text-xs text-muted-foreground">Play the video to collect stroke data.</p>
+      ) : (
+        <div className="space-y-2.5">
+          {rows.map((m) => {
+            const s = snap!.stats[m.key]!;
+            const pct = Math.round(s.inRangePct ?? 0);
+            return (
+              <div key={m.key} className="space-y-1">
+                <div className="flex items-center justify-between text-xs">
+                  <span>{m.label}</span>
+                  <span className="font-mono text-muted-foreground">
+                    avg {fmtVal(s.avg, m.unit)} · {pct}% in range
+                  </span>
+                </div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-secondary">
+                  <div
+                    className={cn("h-full rounded-full", pct >= 70 ? "bg-success" : pct >= 40 ? "bg-warning" : "bg-destructive")}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
 }
 
