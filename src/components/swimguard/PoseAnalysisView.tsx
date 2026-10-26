@@ -332,7 +332,7 @@ function EventTile({ label, value, hint, warn }: { label: string; value: number;
   );
 }
 
-function SessionSummary({ snap, ended }: { snap: AnalysisSnapshot | null; ended: boolean }) {
+function SessionSummary({ snap, ended, demo }: { snap: AnalysisSnapshot | null; ended: boolean; demo?: boolean }) {
   const rows = METRICS.filter((m) => m.min !== undefined && snap?.stats[m.key]);
   return (
     <section className="glass-card space-y-3 rounded-2xl p-4">
@@ -340,7 +340,11 @@ function SessionSummary({ snap, ended }: { snap: AnalysisSnapshot | null; ended:
         <div>
           <h3 className="text-sm font-semibold">Session summary</h3>
           <p className="text-xs text-muted-foreground">
-            {ended ? "Analysis complete — full video processed." : "Updates as the video plays."}
+            {demo
+              ? "Sample session — averages and % of time in target range."
+              : ended
+                ? "Analysis complete — full video processed."
+                : "Updates as the video plays."}
           </p>
         </div>
         <div className="text-right">
@@ -567,11 +571,27 @@ function HudChip({
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function MetricsPanel({ snap, ended, demo }: { snap: AnalysisSnapshot | null; ended: boolean; demo?: boolean }) {
   return (
-    <div className="rounded-xl border border-border bg-secondary/40 p-2.5 text-center">
-      <p className="text-[10px] tracking-wide text-muted-foreground uppercase">{label}</p>
-      <p className="mt-0.5 font-mono text-sm font-semibold text-primary">{value}</p>
-    </div>
+    <>
+      <section className="space-y-2">
+        <h3 className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+          {demo ? "Technique metrics · sample" : "Live technique metrics"}
+        </h3>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {METRICS.map((m) => (
+            <MetricTile key={m.key} def={m} value={snap?.values[m.key] ?? null} stat={snap?.stats[m.key] ?? null} />
+          ))}
+          <EventTile label="Strokes Counted" value={snap?.strokes ?? 0} hint="Hand passes under the shoulder" />
+          <EventTile
+            label="Dropped Elbows"
+            value={snap?.droppedElbows ?? 0}
+            hint="Wrist above elbow on recovery"
+            warn={(snap?.droppedElbows ?? 0) > 0}
+          />
+        </div>
+      </section>
+      <SessionSummary snap={snap} ended={ended} demo={demo} />
+    </>
   );
 }
