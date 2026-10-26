@@ -28,8 +28,11 @@ export function PoseVideoAnalyzer({
   playbackRate,
   model,
   resetSignal,
+  scanning,
   onSnapshot,
   onEnded,
+  onScanProgress,
+  onScanDone,
 }: {
   file: File;
   playbackRate: number;
@@ -37,12 +40,20 @@ export function PoseVideoAnalyzer({
   resetSignal: number;
   onSnapshot: (s: AnalysisSnapshot) => void;
   onEnded: () => void;
+  /** When true, pause playback and analyse every frame by stepping through the video. */
+  scanning: boolean;
+  onScanProgress: (pct: number) => void;
+  onScanDone: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const analyzerRef = useRef(new SwimAnalyzer());
   const onSnapRef = useRef(onSnapshot);
   onSnapRef.current = onSnapshot;
+  const cbRef = useRef({ onScanProgress, onScanDone, onEnded });
+  cbRef.current = { onScanProgress, onScanDone, onEnded };
+  const scanRef = useRef<(() => Promise<void>) | null>(null);
+  const scanAbort = useRef(false);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [err, setErr] = useState("");
   const [url, setUrl] = useState("");
@@ -61,6 +72,19 @@ export function PoseVideoAnalyzer({
   }, [resetSignal]);
 
   useEffect(() => {
+    if (!scanning) {
+      scanAbort.current = true;
+      return;
+    }
+    scanAbort.current = false;
+    if (!scanRef.current) {
+      cbRef.current.onScanDone();
+      return;
+    }
+    void scanRef.current();
+  }, [scanning]);
+
+  useEffect(() => {
     if (videoRef.current) videoRef.current.playbackRate = playbackRate;
   }, [playbackRate, url]);
 
@@ -74,6 +98,7 @@ export function PoseVideoAnalyzer({
     let lastMedia = -1;
     let lastTs = 0;
     let lastEmit = 0;
+    let inScan = false;
     setStatus("loading");
 
     const draw = (v: HTMLVideoElement, lm: Landmark[] | undefined, world: Landmark[] | undefined) => {
@@ -163,12 +188,12 @@ export function PoseVideoAnalyzer({
         // fires once per decoded frame → no skipped frames when detection keeps up
         vfcVideo = v;
         vfc = v.requestVideoFrameCallback((_now, meta) => {
-          process(v, meta.mediaTime);
+          if (!inScan) process(v, meta.mediaTime);
           schedule();
         });
       } else {
         raf = requestAnimationFrame(() => {
-          if (v) process(v, v.currentTime);
+          if (v && !inScan) process(v, v.currentTime);
           schedule();
         });
       }
@@ -198,6 +223,36 @@ export function PoseVideoAnalyzer({
         landmarker = lmk as unknown as Landmarker;
         if (cancelled) { landmarker.close(); return; }
         setStatus("ready");
+        scanRef.current = async () => {
+          const v = videoRef.current;
+          if (!v || !landmarker) return;
+          inScan = true;
+          v.pause();
+          analyzerRef.current.reset();
+          const step = 1 / 30;
+          const dur = v.duration || 0;
+          const seek = (t: number) =>
+            new Promise<void>((res) => {
+              const done = () => { v.removeEventListener("seeked", done); res(); };
+              v.addEventListener("seeked", done);
+              v.currentTime = t;
+            });
+          let i = 0;
+          for (let t = 0; t < dur && !scanAbort.current && !cancelled; t += step, i++) {
+            await seek(t);
+            lastMedia = -1;
+            process(v, t);
+            if (i % 5 === 0) {
+              cbRef.current.onScanProgress(Math.min(100, (t / dur) * 100));
+              await new Promise((r) => setTimeout(r, 0)); // let the UI paint
+            }
+          }
+          inScan = false;
+          if (cancelled) return;
+          onSnapRef.current(analyzerRef.current.snapshot());
+          if (!scanAbort.current) cbRef.current.onEnded();
+          cbRef.current.onScanDone();
+        };
         // analyse the current frame immediately (paused video / after model switch)
         if (videoRef.current) { lastMedia = -1; process(videoRef.current, videoRef.current.currentTime); }
         schedule();
@@ -210,6 +265,7 @@ export function PoseVideoAnalyzer({
 
     return () => {
       cancelled = true;
+      scanRef.current = null;
       cancelAnimationFrame(raf);
       if (vfcVideo && vfc) vfcVideo.cancelVideoFrameCallback(vfc);
       landmarker?.close();
