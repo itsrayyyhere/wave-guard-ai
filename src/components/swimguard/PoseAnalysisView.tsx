@@ -591,7 +591,7 @@ function MetricsPanel({ snap, ended, demo }: { snap: AnalysisSnapshot | null; en
           />
         </div>
       </section>
-      <SessionSummary snap={snap} ended={ended} demo={demo} />
+      <SessionSummary snap={snap} ended={ended} demo={!!demo} />
     </>
   );
 }
