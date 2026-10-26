@@ -3,9 +3,13 @@ import { PoseVideoAnalyzer, type PoseModel } from "./PoseVideoAnalyzer";
 import { Play, Pause, SkipBack, SkipForward, Gauge, Activity, RotateCw, RefreshCcw, Lightbulb, ScanSearch, Square } from "lucide-react";
 import {
   METRICS,
+  angle2,
   inTarget,
+  techniqueScore,
   type AnalysisSnapshot,
+  type ArmPhase,
   type MetricDef,
+  type MetricKey,
   type StatSummary,
 } from "@/lib/pose/metrics";
 import { Button } from "@/components/ui/button";
@@ -58,7 +62,72 @@ const EDGES: [string, string][] = [
   ["rightKnee", "rightAnkle"],
 ];
 
-const PHASES = ["Entry & Extension", "Catch", "Pull-Through", "Recovery"];
+const PHASES: ArmPhase[] = ["Entry & Extension", "Catch", "Pull-Through", "Push & Exit", "Recovery"];
+
+/** Animated sample skeleton points in pixel space. */
+function demoPoints(t: number, w: number, h: number) {
+  const phase = (t / 100) * Math.PI * 2;
+  const pts: Record<string, [number, number]> = {};
+  for (const [k, [x, y]] of Object.entries(BASE)) {
+    const amp = k.includes("Wrist") || k.includes("Hand") ? 0.05 : k.includes("Elbow") ? 0.032 : 0.014;
+    pts[k] = [(x + Math.sin(phase + x * 5) * amp) * w, (y + Math.cos(phase + y * 4) * amp) * h];
+  }
+  return pts;
+}
+
+function demoElbows(t: number) {
+  const p = demoPoints(t, 16, 9);
+  const at = (s: string, e: string, wr: string) => {
+    const a = p[s]!, b = p[e]!, c = p[wr]!;
+    return angle2({ x: a[0], y: a[1] }, { x: b[0], y: b[1] }, { x: c[0], y: c[1] });
+  };
+  return {
+    left: at("leftShoulder", "leftElbow", "leftWrist"),
+    right: at("rightShoulder", "rightElbow", "rightWrist"),
+  };
+}
+
+/** Sample analysis so every measurement is visible before a video is uploaded. */
+function demoSnapshot(t: number): AnalysisSnapshot {
+  const p = (t / 100) * Math.PI * 2;
+  const elbows = demoElbows(t);
+  const S = (avg: number, inRangePct: number | null): StatSummary => ({ n: 48, avg, min: avg - 6, max: avg + 6, inRangePct });
+  const stats: Record<MetricKey, StatSummary | null> = {
+    catchAngle: S(91, 58),
+    rightElbow: S(124, null),
+    leftElbow: S(128, null),
+    shoulderRoll: S(22, 8),
+    hipRoll: S(19, 21),
+    head: S(15, 81),
+    bodyLine: S(167, 74),
+    kneeBend: S(31, 69),
+    strokeRate: S(34, null),
+    symmetry: S(87, 64),
+  };
+  return {
+    frames: Math.round(t * 25),
+    tracked: Math.round(t * 25 * 0.92),
+    conf: 92,
+    side: "right",
+    phase: PHASES[Math.floor((t / 100) * PHASES.length) % PHASES.length] ?? null,
+    values: {
+      catchAngle: 88 + Math.sin(p) * 6,
+      rightElbow: elbows.right,
+      leftElbow: elbows.left,
+      shoulderRoll: 22 + Math.cos(p) * 4,
+      hipRoll: 19 + Math.cos(p) * 3,
+      head: 15 + Math.sin(p * 2) * 6,
+      bodyLine: 167 + Math.sin(p) * 5,
+      kneeBend: 31 + Math.sin(p * 4) * 8,
+      strokeRate: 34,
+      symmetry: 87,
+    },
+    strokes: 12 + Math.floor((t / 100) * 12),
+    droppedElbows: 4,
+    stats,
+    score: techniqueScore(stats),
+  };
+}
 
 const fmtVal = (v: number | null | undefined, unit: string) =>
   v === null || v === undefined ? "—" : `${Math.round(v)}${unit === "°" || unit === "%" ? unit : ` ${unit}`}`;
@@ -199,24 +268,8 @@ export function PoseAnalysisView({ file }: { file?: File | null }) {
         )}
       </div>
 
-      {/* Live metrics */}
-      <section className="space-y-2">
-        <h3 className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">Live technique metrics</h3>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {METRICS.map((m) => (
-            <MetricTile key={m.key} def={m} value={v?.[m.key] ?? null} stat={snap?.stats[m.key] ?? null} />
-          ))}
-          <EventTile label="Strokes Counted" value={snap?.strokes ?? 0} hint="Hand passes under the shoulder" />
-          <EventTile
-            label="Dropped Elbows"
-            value={snap?.droppedElbows ?? 0}
-            hint="Wrist above elbow on recovery"
-            warn={(snap?.droppedElbows ?? 0) > 0}
-          />
-        </div>
-      </section>
+      <MetricsPanel snap={snap} ended={ended} />
 
-      <SessionSummary snap={snap} ended={ended} />
 
       <div className="glass-card space-y-1.5 rounded-2xl p-4 text-xs text-muted-foreground">
         <p className="flex items-center gap-2 font-medium text-foreground">
@@ -252,9 +305,13 @@ function MetricTile({ def, value, stat }: { def: MetricDef; value: number | null
       >
         {fmtVal(value, def.unit)}
       </p>
-      <p className="truncate text-[10px] text-muted-foreground">
-        {hasTarget ? `Target ${def.min}–${def.max}${def.unit === "°" ? "°" : def.unit}` : def.hint}
-      </p>
+      {hasTarget && (
+        <p className="truncate text-[10px] font-medium text-muted-foreground">
+          Target {def.min}–{def.max}
+          {def.unit}
+        </p>
+      )}
+      <p className="mt-0.5 line-clamp-2 text-[10px] leading-snug text-muted-foreground/80">{def.hint}</p>
       {stat && (
         <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground">
           avg {fmtVal(stat.avg, def.unit)}
@@ -352,12 +409,7 @@ function DemoPoseView() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
 
-    const phase = (t / 100) * Math.PI * 2;
-    const pts: Record<string, [number, number]> = {};
-    for (const [k, [x, y]] of Object.entries(BASE)) {
-      const amp = k.includes("Wrist") || k.includes("Hand") ? 0.05 : k.includes("Elbow") ? 0.032 : 0.014;
-      pts[k] = [(x + Math.sin(phase + x * 5) * amp) * w, (y + Math.cos(phase + y * 4) * amp) * h];
-    }
+    const pts = demoPoints(t, w, h);
 
     ctx.lineCap = "round";
     for (const [a, b] of EDGES) {
@@ -384,11 +436,26 @@ function DemoPoseView() {
       ctx.fill();
     }
     ctx.shadowBlur = 0;
+
+    // live elbow angle labels
+    ctx.font = "600 11px 'JetBrains Mono', monospace";
+    const ang = demoElbows(t);
+    for (const [el, value] of [["leftElbow", ang.left], ["rightElbow", ang.right]] as const) {
+      const p = pts[el];
+      if (!p) continue;
+      const label = `${Math.round(value)}°`;
+      const tw = ctx.measureText(label).width;
+      ctx.fillStyle = "rgba(8,16,24,0.75)";
+      ctx.fillRect(p[0] + 8, p[1] - 18, tw + 8, 16);
+      ctx.fillStyle = "#38e8f0";
+      ctx.fillText(label, p[0] + 12, p[1] - 6);
+    }
   }, [t]);
 
-  const elbowAngle = Math.round(88 + Math.sin((t / 100) * Math.PI * 2) * 6);
-  const bodyRoll = Math.round(22 + Math.cos((t / 100) * Math.PI * 2) * 4);
-  const strokePhase = PHASES[Math.floor((t / 100) * PHASES.length) % PHASES.length];
+  const demo = demoSnapshot(t);
+  const elbowAngle = Math.round(demo.values.catchAngle ?? 0);
+  const bodyRoll = Math.round(demo.values.shoulderRoll ?? 0);
+  const strokePhase = demo.phase;
 
   const fmt = (v: number) => {
     const secs = (v / 100) * 84;
@@ -464,16 +531,13 @@ function DemoPoseView() {
             ))}
           </div>
         </div>
-        <div className="grid grid-cols-3 gap-2">
-          <Metric label="Stroke Rate" value="34 spm" />
-          <Metric label="DPS" value="2.1 m" />
-          <Metric label="Symmetry" value="87%" />
-        </div>
       </div>
+
+      <MetricsPanel snap={demo} ended={false} demo />
 
       <p className="flex items-center gap-2 text-xs text-muted-foreground">
         <RotateCw className="size-3.5 shrink-0 text-primary" />
-        Frame-by-frame joint tracking simulated from the latest uploaded session.
+        Sample session shown. Upload a swim video on the Upload tab to measure your own stroke.
       </p>
     </div>
   );
