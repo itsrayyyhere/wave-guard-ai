@@ -65,6 +65,7 @@ export function PoseVideoAnalyzer({
   }, [playbackRate, url]);
 
   useEffect(() => {
+    if (!url) return;
     let cancelled = false;
     let raf = 0;
     let vfc = 0;
