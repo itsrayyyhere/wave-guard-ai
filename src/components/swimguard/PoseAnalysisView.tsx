@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PoseVideoAnalyzer, type PoseModel } from "./PoseVideoAnalyzer";
-import { Play, Pause, SkipBack, SkipForward, Gauge, Activity, RotateCw, RefreshCcw, Lightbulb } from "lucide-react";
+import { Play, Pause, SkipBack, SkipForward, Gauge, Activity, RotateCw, RefreshCcw, Lightbulb, ScanSearch, Square } from "lucide-react";
 import {
   METRICS,
   inTarget,
@@ -69,6 +69,9 @@ export function PoseAnalysisView({ file }: { file?: File | null }) {
   const [snap, setSnap] = useState<AnalysisSnapshot | null>(null);
   const [resetSignal, setResetSignal] = useState(0);
   const [ended, setEnded] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [scanPct, setScanPct] = useState(0);
+  const onScanDone = useCallback(() => setScanning(false), []);
   const onSnapshot = useCallback((s: AnalysisSnapshot) => {
     setSnap(s);
     setEnded(false);
@@ -96,6 +99,9 @@ export function PoseAnalysisView({ file }: { file?: File | null }) {
           resetSignal={resetSignal}
           onSnapshot={onSnapshot}
           onEnded={onEnded}
+          scanning={scanning}
+          onScanProgress={setScanPct}
+          onScanDone={onScanDone}
         />
         <div className="pointer-events-none absolute top-2.5 left-2.5 space-y-1.5 sm:top-4 sm:left-4">
           <HudChip
@@ -162,10 +168,34 @@ export function PoseAnalysisView({ file }: { file?: File | null }) {
               </button>
             ))}
           </div>
-          <Button variant="ghost" size="sm" onClick={() => setResetSignal((n) => n + 1)}>
-            <RefreshCcw className="size-3.5" /> Reset stats
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="sm" disabled={scanning} onClick={() => setResetSignal((n) => n + 1)}>
+              <RefreshCcw className="size-3.5" /> Reset
+            </Button>
+            <Button
+              variant={scanning ? "outline" : "hero"}
+              size="sm"
+              onClick={() => {
+                if (!scanning) setScanPct(0);
+                setScanning((s) => !s);
+              }}
+            >
+              {scanning ? <Square className="size-3.5" /> : <ScanSearch className="size-3.5" />}
+              {scanning ? "Stop" : "Scan every frame"}
+            </Button>
+          </div>
         </div>
+        {scanning && (
+          <div className="space-y-1">
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>Scanning frame by frame…</span>
+              <span className="font-mono">{Math.round(scanPct)}%</span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-secondary">
+              <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${scanPct}%` }} />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Live metrics */}
@@ -191,7 +221,7 @@ export function PoseAnalysisView({ file }: { file?: File | null }) {
         <p className="flex items-center gap-2 font-medium text-foreground">
           <Lightbulb className="size-3.5 text-primary" /> For the most accurate results
         </p>
-        <p>Film side-on with the camera level and the whole body in frame. Use 0.5x or 0.25x so every frame is analyzed.</p>
+        <p>Film side-on with the camera level and the whole body in frame. For the most precise numbers, tap “Scan every frame” — it steps through the whole video so no frame is skipped.</p>
         <p>Faded joints are low-confidence and are left out of the numbers. Roll angles are estimated from depth and are less precise than joint angles.</p>
         <p className="flex items-center gap-2 pt-1">
           <RotateCw className="size-3.5 shrink-0 text-primary" />
