@@ -81,6 +81,7 @@ export function PoseAnalysisView({ file }: { file?: File | null }) {
   useEffect(() => {
     setSnap(null);
     setEnded(false);
+    setScanning(false);
   }, [file]);
 
   if (!file) return <DemoPoseView />;
