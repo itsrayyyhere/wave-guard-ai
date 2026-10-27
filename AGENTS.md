@@ -14,3 +14,4 @@
 - Keep `ai` and `@ai-sdk/openai` on versions that share the same `@ai-sdk/provider` version; mismatches break typechecking.
 - Swim pose metrics live in pure, DOM-free `src/lib/pose/metrics.ts` (unit-tested with `bunx vitest run`, config in `vitest.config.ts`); `PoseVideoAnalyzer` only runs MediaPipe, draws, and feeds landmarks in — keeps the measurement logic testable and separate from rendering.
 - Joint angles use MediaPipe world (3D) landmarks; body-line/head/stroke-phase use aspect-corrected pixel coords; the MediaPipe wasm URL is pinned to the installed package version to avoid JS/wasm mismatches.
+- Racing ranking-point rules are pure functions in `src/lib/race/ranking.ts` (unit-tested); totals/history persist per device in localStorage via `ranking-store.ts` (`useSyncExternalStore`, empty on SSR) — keeps scoring testable and avoids hydration mismatches.
