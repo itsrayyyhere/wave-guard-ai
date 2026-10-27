@@ -365,7 +365,12 @@ export function RacingGame({ onExit }: { onExit: () => void }) {
       )}
 
       {phase === "done" && (
-        <Results racers={racers} onRestart={startRace} onLobby={() => setPhase("lobby")} />
+        <Results
+          racers={racers}
+          earned={earned}
+          onRestart={startRace}
+          onLobby={() => setPhase("lobby")}
+        />
       )}
     </div>
   );
@@ -429,13 +434,16 @@ function Lane({ racer, style }: { racer: Racer; style: string }) {
 
 function Results({
   racers,
+  earned,
   onRestart,
   onLobby,
 }: {
   racers: Racer[];
+  earned: number;
   onRestart: () => void;
   onLobby: () => void;
 }) {
+  const ranking = useRanking();
   const ranked = rankRacers(racers);
   const place = ranked.findIndex((r) => r.id === PLAYER_ID) + 1;
   const won = place === 1 && ranked[0]?.finishedAt != null;
@@ -446,6 +454,17 @@ function Results({
         <h2 className="mt-2 text-lg font-semibold">
           {won ? "You won the race!" : `You placed #${place}`}
         </h2>
+        <p
+          className={cn(
+            "mt-2 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-semibold",
+            earned > 0 ? "bg-primary/15 text-primary" : "bg-secondary text-muted-foreground",
+          )}
+        >
+          {earned > 0 ? `+${earned} ranking points` : "No ranking points this race"}
+        </p>
+        <p className="mt-1.5 text-xs text-muted-foreground">
+          Total: <span className="font-mono text-foreground">{ranking.total}</span> pts
+        </p>
       </div>
       <ol className="space-y-1.5">
         {ranked.map((r, i) => (
