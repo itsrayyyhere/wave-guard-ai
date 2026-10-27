@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { Car, Gamepad2, Trophy } from "lucide-react";
-import { toast } from "sonner";
 import { RacingGame } from "./RacingGame";
+import { RankingsSheet } from "./RankingsSheet";
 
 export function GamesView() {
   const [playing, setPlaying] = useState(false);
+  const [rankingsOpen, setRankingsOpen] = useState(false);
 
   return (
     <div className="relative space-y-6 pb-16">
@@ -48,15 +49,12 @@ export function GamesView() {
       {/* Rankings floating button — icon only */}
       <button
         aria-label="Rankings"
-        onClick={() =>
-          toast("Rankings", {
-            description: "Leaderboard unlocks after your first race.",
-          })
-        }
+        onClick={() => setRankingsOpen(true)}
         className="glow-ring fixed right-5 bottom-16 z-30 grid size-14 place-items-center rounded-full bg-[image:var(--gradient-cyan)] text-primary-foreground shadow-lg transition-transform active:scale-95 sm:absolute sm:right-0 sm:bottom-4"
       >
         <Trophy className="size-6" />
       </button>
+      <RankingsSheet open={rankingsOpen} onOpenChange={setRankingsOpen} />
     </div>
   );
 }

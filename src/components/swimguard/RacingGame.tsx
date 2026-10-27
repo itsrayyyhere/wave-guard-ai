@@ -10,6 +10,8 @@ import {
   type BotLevel,
   type RaceQuestion,
 } from "@/lib/race/questions";
+import { racePoints } from "@/lib/race/ranking";
+import { recordRace, useRanking } from "@/lib/race/ranking-store";
 import { useQuestionFeed } from "./useQuestionFeed";
 
 type Phase = "lobby" | "countdown" | "racing" | "done";
@@ -67,9 +69,11 @@ export function RacingGame({ onExit }: { onExit: () => void }) {
   const [question, setQuestion] = useState<RaceQuestion | null>(null);
   const [picked, setPicked] = useState<number | null>(null);
   const [penaltyEnd, setPenaltyEnd] = useState<number | null>(null);
+  const [earned, setEarned] = useState(0);
 
   const startRef = useRef(0);
   const playerTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const recordedRef = useRef(false);
 
   // Warm up the question supply as soon as the game opens.
   useEffect(() => {
@@ -145,11 +149,31 @@ export function RacingGame({ onExit }: { onExit: () => void }) {
       if (playerTimer.current) clearTimeout(playerTimer.current);
       setNow(performance.now() - startRef.current);
       setPhase("done");
+      if (!recordedRef.current) {
+        recordedRef.current = true;
+        const ranked = rankRacers(racers);
+        const idx = ranked.findIndex((r) => r.id === PLAYER_ID);
+        const beaten = ranked
+          .slice(idx + 1)
+          .map((r) => r.level)
+          .filter((l): l is BotLevel => l != null);
+        const points = racePoints({ place: idx + 1, opponents, beaten });
+        recordRace({
+          at: Date.now(),
+          place: idx + 1,
+          field: racers.length,
+          opponents: [...opponents],
+          points,
+        });
+        setEarned(points);
+      }
     }
-  }, [racers, phase]);
+  }, [racers, phase, opponents]);
 
   function startRace() {
     if (playerTimer.current) clearTimeout(playerTimer.current);
+    recordedRef.current = false;
+    setEarned(0);
     setRacers(makeRacers(opponents));
     setPicked(null);
     setPenaltyEnd(null);
@@ -341,7 +365,12 @@ export function RacingGame({ onExit }: { onExit: () => void }) {
       )}
 
       {phase === "done" && (
-        <Results racers={racers} onRestart={startRace} onLobby={() => setPhase("lobby")} />
+        <Results
+          racers={racers}
+          earned={earned}
+          onRestart={startRace}
+          onLobby={() => setPhase("lobby")}
+        />
       )}
     </div>
   );
@@ -405,13 +434,16 @@ function Lane({ racer, style }: { racer: Racer; style: string }) {
 
 function Results({
   racers,
+  earned,
   onRestart,
   onLobby,
 }: {
   racers: Racer[];
+  earned: number;
   onRestart: () => void;
   onLobby: () => void;
 }) {
+  const ranking = useRanking();
   const ranked = rankRacers(racers);
   const place = ranked.findIndex((r) => r.id === PLAYER_ID) + 1;
   const won = place === 1 && ranked[0]?.finishedAt != null;
@@ -422,6 +454,17 @@ function Results({
         <h2 className="mt-2 text-lg font-semibold">
           {won ? "You won the race!" : `You placed #${place}`}
         </h2>
+        <p
+          className={cn(
+            "mt-2 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-semibold",
+            earned > 0 ? "bg-primary/15 text-primary" : "bg-secondary text-muted-foreground",
+          )}
+        >
+          {earned > 0 ? `+${earned} ranking points` : "No ranking points this race"}
+        </p>
+        <p className="mt-1.5 text-xs text-muted-foreground">
+          Total: <span className="font-mono text-foreground">{ranking.total}</span> pts
+        </p>
       </div>
       <ol className="space-y-1.5">
         {ranked.map((r, i) => (
