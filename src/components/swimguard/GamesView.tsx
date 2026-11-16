@@ -2,13 +2,15 @@ import { useState } from "react";
 import { Car, Gamepad2, Trophy } from "lucide-react";
 import { RacingGame } from "./RacingGame";
 import { RankingsSheet } from "./RankingsSheet";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 export function GamesView() {
   const [playing, setPlaying] = useState(false);
   const [rankingsOpen, setRankingsOpen] = useState(false);
 
   return (
-    <div className="relative space-y-6 pb-16">
+    <div className={cn("relative", !playing && "space-y-6 pb-16")}>
       {playing ? (
         <RacingGame onExit={() => setPlaying(false)} />
       ) : (
@@ -47,13 +49,15 @@ export function GamesView() {
       )}
 
       {/* Rankings floating button — icon only */}
-      <button
+      <Button
+        variant="hero"
+        size="icon"
         aria-label="Rankings"
         onClick={() => setRankingsOpen(true)}
-        className="glow-ring fixed right-5 bottom-16 z-30 grid size-14 place-items-center rounded-full bg-[image:var(--gradient-cyan)] text-primary-foreground shadow-lg transition-transform active:scale-95 sm:absolute sm:right-0 sm:bottom-4"
+        className={cn("glow-ring z-30 rounded-full transition-transform active:scale-95", playing ? "absolute top-0 right-0 size-8" : "fixed right-5 bottom-16 size-14 sm:absolute sm:right-0 sm:bottom-4")}
       >
-        <Trophy className="size-6" />
-      </button>
+        <Trophy className={playing ? "size-4" : "size-6"} />
+      </Button>
       <RankingsSheet open={rankingsOpen} onOpenChange={setRankingsOpen} />
     </div>
   );

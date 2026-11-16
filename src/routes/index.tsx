@@ -18,6 +18,8 @@ export const Route = createFileRoute("/")({
           "AI pose analysis for swimmers: 33-point stroke tracking, catch angle and body roll metrics, and shoulder injury risk reports with corrective drills.",
       },
       { property: "og:title", content: "SwimGuard AI — Swim Stroke & Injury Risk Analysis" },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
       {
         property: "og:description",
         content:
@@ -88,7 +90,7 @@ function SwimGuard() {
           </nav>
         </header>
 
-        <main key={tab} className="animate-in fade-in slide-in-from-bottom-2 px-4 py-5 duration-300">
+        <main key={tab} className={cn("animate-in fade-in slide-in-from-bottom-2 px-4 duration-300", tab === "games" ? "py-2" : "py-5")}>
           {tab === "dashboard" && (
             <DashboardView
               onOpenSession={() => setTab("analysis")}

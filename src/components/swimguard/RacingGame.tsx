@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Car, Check, Flag, Minus, Plus, RotateCcw, Timer, Trophy, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import {
   BOT_LEVELS,
   MAX_OPPONENTS,
@@ -291,8 +292,8 @@ export function RacingGame({ onExit }: { onExit: () => void }) {
 
   // ---------- Countdown / Racing / Done ----------
   return (
-    <div className="space-y-5 pb-16">
-      <div className="flex items-center justify-between">
+    <div className="space-y-2">
+      <div className="flex h-8 items-center justify-between pr-12">
         <BackButton onClick={() => setPhase("lobby")} label={phase === "done" ? "Lobby" : "Quit"} />
         <span className="flex items-center gap-1.5 font-mono text-sm text-muted-foreground">
           <Timer className="size-4" />
@@ -300,14 +301,14 @@ export function RacingGame({ onExit }: { onExit: () => void }) {
         </span>
       </div>
 
-      <section className="glass-card space-y-3 rounded-2xl p-4">
+      <section aria-label="Race progress" className="sticky top-[108px] z-10 space-y-1 rounded-lg border border-border bg-background p-2">
         {racers.map((r, i) => (
           <Lane key={r.id} racer={r} style={LANE_STYLES[i] ?? ""} />
         ))}
       </section>
 
       {phase === "countdown" && (
-        <section className="glass-card grid h-48 place-items-center rounded-2xl">
+        <section className="grid h-36 place-items-center">
           <span key={count} className="animate-in zoom-in-50 fade-in text-gradient-cyan font-display text-6xl font-bold duration-300">
             {count > 0 ? count : "GO"}
           </span>
@@ -315,44 +316,46 @@ export function RacingGame({ onExit }: { onExit: () => void }) {
       )}
 
       {phase === "racing" && question && (
-        <section className="glass-card relative space-y-4 overflow-hidden rounded-2xl p-5">
+        <section aria-label="Race question" className="space-y-2 py-1">
           <div className="flex items-center justify-between text-xs text-muted-foreground">
             <span>Your progress</span>
             <span className="font-medium text-primary">
               {me?.position ?? 0} / {RACE_GOAL}
             </span>
           </div>
-          <p className="text-base leading-snug font-medium">{question.q}</p>
-          <ul className="grid gap-2">
+          <p className="break-words text-sm leading-snug font-medium">{question.q}</p>
+          <ul className="grid grid-cols-2 gap-2">
             {question.options.map((opt, i) => {
               const isCorrect = i === question.answer;
               const isPicked = i === picked;
               const revealed = picked !== null;
               return (
                 <li key={`${question.q}-${i}`}>
-                  <button
+                  <Button
+                    variant="outline"
                     onClick={() => answer(i)}
                     disabled={revealed}
                     className={cn(
-                      "flex w-full items-center justify-between gap-3 rounded-xl border px-4 py-3 text-left text-sm transition-all",
+                      "h-auto min-h-11 w-full items-center justify-between gap-2 whitespace-normal rounded-lg border px-3 py-2 text-left text-xs leading-snug transition-all disabled:opacity-100",
                       !revealed && "border-border bg-secondary/40 hover:border-primary/50 hover:bg-accent/30",
                       revealed && isCorrect && "border-success/60 bg-success/15",
                       revealed && isPicked && !isCorrect && "border-destructive/60 bg-destructive/15",
                       revealed && !isPicked && !isCorrect && "border-border bg-secondary/20 opacity-60",
                     )}
                   >
-                    <span>{opt}</span>
+                    <span className="min-w-0 break-words">{opt}</span>
                     {revealed && isCorrect && <Check className="size-4 shrink-0 text-success" />}
                     {revealed && isPicked && !isCorrect && <X className="size-4 shrink-0 text-destructive" />}
-                  </button>
+                  </Button>
                 </li>
               );
             })}
           </ul>
+          <div aria-live="polite" className="min-h-5">
           {picked !== null && (
             <p
               className={cn(
-                "text-center text-sm font-medium",
+                "text-center text-xs font-medium",
                 picked === question.answer ? "text-success" : "text-destructive",
               )}
             >
@@ -361,6 +364,7 @@ export function RacingGame({ onExit }: { onExit: () => void }) {
                 : `Wrong — penalty ${(penaltyLeft / 1000).toFixed(1)}s`}
             </p>
           )}
+          </div>
         </section>
       )}
 
@@ -378,35 +382,31 @@ export function RacingGame({ onExit }: { onExit: () => void }) {
 
 function BackButton({ onClick, label }: { onClick: () => void; label: string }) {
   return (
-    <button
+    <Button
+      variant="ghost"
       onClick={onClick}
-      className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground"
+      className="h-8 gap-1.5 rounded-lg px-2 text-xs text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
     >
       <ArrowLeft className="size-4" />
       {label}
-    </button>
+    </Button>
   );
 }
 
 function Lane({ racer, style }: { racer: Racer; style: string }) {
   const pct = (racer.position / RACE_GOAL) * 100;
   return (
-    <div>
-      <div className="mb-1 flex items-center justify-between text-[11px]">
-        <span className="flex items-center gap-1.5 font-medium">
+    <div className="grid grid-cols-[64px_minmax(0,1fr)_42px] items-center gap-2">
+        <span className="min-w-0 text-[11px] leading-tight font-medium">
           {racer.name}
           {racer.level && (
-            <span className="rounded-full bg-secondary px-1.5 py-px text-[10px] text-muted-foreground">
+            <span className="block text-[9px] font-normal text-muted-foreground">
               {BOT_LEVELS[racer.level].label}
             </span>
           )}
         </span>
-        <span className="font-mono text-muted-foreground">
-          {racer.finishedAt != null ? fmt(racer.finishedAt) : `${racer.position}/${RACE_GOAL}`}
-        </span>
-      </div>
-      <div className="relative h-11 rounded-lg border border-border bg-secondary/50">
-        <div className="absolute inset-y-0 right-6 left-6 flex justify-between">
+      <div className="relative h-8 rounded-md border border-border bg-secondary/50">
+        <div className="absolute inset-y-0 right-4 left-4 flex justify-between">
           {Array.from({ length: RACE_GOAL + 1 }).map((_, i) => (
             <span
               key={i}
@@ -417,17 +417,20 @@ function Lane({ racer, style }: { racer: Racer; style: string }) {
             />
           ))}
         </div>
-        <div className="absolute inset-y-0 right-6 left-6">
+        <div className="absolute inset-y-0 right-4 left-4">
           <div
             className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 transition-[left] duration-500 ease-out"
             style={{ left: `${pct}%` }}
           >
-            <span className={cn("grid size-8 place-items-center rounded-lg", style)}>
-              <Car className="size-5" />
+            <span className={cn("grid size-6 place-items-center rounded-md", style)}>
+              <Car className="size-4" />
             </span>
           </div>
         </div>
       </div>
+      <span className="text-right font-mono text-[10px] text-muted-foreground">
+        {racer.finishedAt != null ? fmt(racer.finishedAt) : `${racer.position}/${RACE_GOAL}`}
+      </span>
     </div>
   );
 }
