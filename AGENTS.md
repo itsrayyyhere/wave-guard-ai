@@ -10,6 +10,7 @@
 <!-- LOVABLE:END -->
 
 ## Architecture rules
+- Make a set keeps draft/results in a root React provider across its editor and score routes; scoring uses the AI Gateway SDK in a server-only helper with validated six-criterion output and pure weighted scoring tests, so navigation preserves edits and no client can supply a final score.
 - Racing game questions come from a `createServerFn` in `src/lib/race/questions.functions.ts` that calls Lovable AI Gateway server-side (`questions.server.ts`); the client keeps a background-refilled queue with built-in fallback questions so the race never stalls when AI is slow or unavailable.
 - Keep `ai` and `@ai-sdk/openai` on versions that share the same `@ai-sdk/provider` version; mismatches break typechecking.
 - Swim pose metrics live in pure, DOM-free `src/lib/pose/metrics.ts` (unit-tested with `bunx vitest run`, config in `vitest.config.ts`); `PoseVideoAnalyzer` only runs MediaPipe, draws, and feeds landmarks in — keeps the measurement logic testable and separate from rendering.

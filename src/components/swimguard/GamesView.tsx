@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Car, Gamepad2, Trophy } from "lucide-react";
+import { Car, ClipboardList, Gamepad2, Trophy } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 import { RacingGame } from "./RacingGame";
 import { RankingsSheet } from "./RankingsSheet";
 import { Button } from "@/components/ui/button";
@@ -42,6 +43,14 @@ export function GamesView() {
                     </span>
                   </span>
                 </button>
+              </li>
+              <li>
+                <Button asChild variant="ghost" className="glass-card group flex h-auto w-full items-center gap-3 rounded-xl p-3 text-left whitespace-normal hover:border-primary/40 hover:bg-accent/30">
+                  <Link to="/games/make-set">
+                    <span className="grid size-11 shrink-0 place-items-center rounded-lg bg-success/10 text-success"><ClipboardList className="size-6" /></span>
+                    <span className="min-w-0 flex-1"><span className="block text-sm font-medium">Make a set</span><span className="mt-0.5 block text-xs font-normal text-muted-foreground">Warmup to cool down. Your workout, scored out of 100.</span></span>
+                  </Link>
+                </Button>
               </li>
             </ul>
           </section>

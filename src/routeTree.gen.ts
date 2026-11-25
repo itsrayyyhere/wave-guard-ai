@@ -10,33 +10,53 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as GamesMakeSetRouteImport } from './routes/games.make-set'
+import { Route as GamesSetScoreRouteImport } from './routes/games.set-score'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const GamesMakeSetRoute = GamesMakeSetRouteImport.update({
+  id: '/games/make-set',
+  path: '/games/make-set',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GamesSetScoreRoute = GamesSetScoreRouteImport.update({
+  id: '/games/set-score',
+  path: '/games/set-score',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/games/make-set': typeof GamesMakeSetRoute
+  '/games/set-score': typeof GamesSetScoreRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/games/make-set': typeof GamesMakeSetRoute
+  '/games/set-score': typeof GamesSetScoreRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/games/make-set': typeof GamesMakeSetRoute
+  '/games/set-score': typeof GamesSetScoreRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/games/make-set' | '/games/set-score'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/games/make-set' | '/games/set-score'
+  id: '__root__' | '/' | '/games/make-set' | '/games/set-score'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  GamesMakeSetRoute: typeof GamesMakeSetRoute
+  GamesSetScoreRoute: typeof GamesSetScoreRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +68,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/games/make-set': {
+      id: '/games/make-set'
+      path: '/games/make-set'
+      fullPath: '/games/make-set'
+      preLoaderRoute: typeof GamesMakeSetRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/games/set-score': {
+      id: '/games/set-score'
+      path: '/games/set-score'
+      fullPath: '/games/set-score'
+      preLoaderRoute: typeof GamesSetScoreRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  GamesMakeSetRoute: GamesMakeSetRoute,
+  GamesSetScoreRoute: GamesSetScoreRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

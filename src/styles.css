@@ -134,3 +134,14 @@
   background-clip: text;
   color: transparent;
 }
+
+.set-score-progress {
+  appearance: none;
+  border: 0;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--secondary);
+}
+.set-score-progress::-webkit-progress-bar { background: var(--secondary); }
+.set-score-progress::-webkit-progress-value { background: var(--primary); }
+.set-score-progress::-moz-progress-bar { background: var(--primary); }

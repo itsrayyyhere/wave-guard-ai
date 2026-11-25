@@ -9,6 +9,7 @@ import { ReportView } from "@/components/swimguard/ReportView";
 import { GamesView } from "@/components/swimguard/GamesView";
 
 export const Route = createFileRoute("/")({
+  validateSearch: (search: Record<string, unknown>): { tab?: "games" } => search["tab"] === "games" ? { tab: "games" } : {},
   head: () => ({
     meta: [
       { title: "SwimGuard AI — Swim Stroke & Injury Risk Analysis" },
@@ -40,7 +41,8 @@ const TABS = [
 type TabId = (typeof TABS)[number]["id"];
 
 function SwimGuard() {
-  const [tab, setTab] = useState<TabId>("dashboard");
+  const search = Route.useSearch();
+  const [tab, setTab] = useState<TabId>(search.tab === "games" ? "games" : "dashboard");
   const [file, setFile] = useState<File | null>(null);
 
   return (
